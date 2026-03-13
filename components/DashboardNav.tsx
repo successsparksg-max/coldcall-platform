@@ -50,13 +50,8 @@ export function DashboardNav() {
 
   const itAdminNav: NavItem[] = [
     {
-      label: "Credentials",
+      label: "Dashboard",
       href: "/it-admin",
-      icon: <Settings className="h-4 w-4" />,
-    },
-    {
-      label: "Manage Users",
-      href: "/it-admin/users",
       icon: <Users className="h-4 w-4" />,
     },
   ];
