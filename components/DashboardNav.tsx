@@ -46,6 +46,16 @@ export function DashboardNav() {
       href: "/admin",
       icon: <LayoutDashboard className="h-4 w-4" />,
     },
+    {
+      label: "Call Lists",
+      href: "/admin/call-lists",
+      icon: <Phone className="h-4 w-4" />,
+    },
+    {
+      label: "Credentials",
+      href: "/admin/credentials",
+      icon: <Settings className="h-4 w-4" />,
+    },
   ];
 
   const itAdminNav: NavItem[] = [
@@ -57,7 +67,7 @@ export function DashboardNav() {
   ];
 
   let navItems: NavItem[] = agentNav;
-  if (role === "admin") navItems = [...adminNav, ...agentNav];
+  if (role === "admin") navItems = adminNav;
   else if (role === "it_admin") navItems = itAdminNav;
 
   // Change password link (not for IT admin since their password is in env)
