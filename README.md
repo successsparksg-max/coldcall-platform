@@ -9,7 +9,7 @@ A multi-tenant SaaS platform for insurance agencies to automate outbound cold ca
 - **Dual telephony support** — Twilio (via ElevenLabs) or DIDWW (direct SIP) per agent
 - **Excel upload with validation** — Standardized template with deterministic server-side validation (no LLM)
 - **Durable call execution** — Inngest step functions handle sequential call loops with pause/resume/cancel
-- **Post-call analysis** — DeepSeek (via OpenRouter) extracts ratings, summaries, emails, names, and booking status from transcripts
+- **Post-call analysis** — Configurable LLM via Vercel AI Gateway extracts ratings, summaries, emails, names, and booking status from transcripts
 - **Role-based dashboards** — Agent dashboard, admin master dashboard, and IT admin credential panel
 - **Encrypted credentials** — AES-256-GCM encryption for all API keys stored at rest
 
@@ -23,8 +23,8 @@ A multi-tenant SaaS platform for insurance agencies to automate outbound cold ca
 | Background Jobs | **Inngest** (durable step functions) |
 | Voice AI | **ElevenLabs Conversational AI** |
 | Telephony | **Twilio** or **DIDWW** (per agent) |
-| Post-call Analysis | **DeepSeek** via **OpenRouter** |
-| Auth | **NextAuth.js** (Credentials provider, JWT) |
+| Post-call Analysis | **Vercel AI Gateway** (configurable model, default: DeepSeek v3.2) |
+| Auth | Custom JWT auth with `jose` (httpOnly cookies) |
 | UI | **shadcn/ui** + **Tailwind CSS** |
 | Validation | **Zod** |
 
@@ -111,7 +111,7 @@ Agent sets up ElevenLabs account (voice + script + phone number)
 - Node.js 18+
 - A NeonDB database
 - ElevenLabs account(s) with Conversational AI configured
-- OpenRouter API key (for DeepSeek post-call analysis)
+- Vercel AI Gateway key (for post-call transcript analysis)
 - Inngest account (for background job processing)
 
 ### 1. Install dependencies
@@ -132,8 +132,9 @@ DATABASE_URL=postgresql://user:pass@ep-xyz.us-east-2.aws.neon.tech/dbname?sslmod
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=<random-32-char-string>
 
-# OpenRouter
-OPENROUTER_API_KEY=sk-or-...
+# Vercel AI Gateway (post-call transcript analysis)
+VERCEL_AI_GATEWAY_KEY=vck_...
+AI_MODEL=deepseek/deepseek-v3.2
 
 # Encryption key for agent credentials (base64-encoded 32-byte key)
 CREDENTIALS_ENCRYPTION_KEY=<base64-key>

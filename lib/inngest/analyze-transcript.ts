@@ -11,17 +11,17 @@ export const analyzeCallTranscript = inngest.createFunction(
     const { conversationId, transcriptText, recordingUrl } = event.data;
 
     const analysis = await step.run("llm-analysis", async () => {
+      const model = process.env.AI_MODEL || "deepseek/deepseek-v3.2";
       const response = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
+        "https://gateway.vercel.ai/v1/chat/completions",
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            Authorization: `Bearer ${process.env.VERCEL_AI_GATEWAY_KEY}`,
             "Content-Type": "application/json",
-            "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "",
           },
           body: JSON.stringify({
-            model: "deepseek/deepseek-chat",
+            model,
             messages: [
               {
                 role: "user",
