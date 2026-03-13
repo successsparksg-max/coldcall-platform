@@ -1,3 +1,14 @@
+/**
+ * Optional seed script — only needed if you want to pre-populate
+ * test users via CLI instead of through the IT admin UI.
+ *
+ * Usage: npx tsx scripts/seed.ts
+ *
+ * Note: The IT admin user is NOT stored in the database.
+ * IT admin credentials are set via environment variables:
+ *   IT_ADMIN_USERNAME and IT_ADMIN_PASSWORD
+ */
+
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import bcrypt from "bcryptjs";
@@ -15,7 +26,7 @@ async function seed() {
 
   const passwordHash = await bcrypt.hash("admin123", 12);
 
-  // Create admin user
+  // Create a sample admin (agency head)
   const [admin] = await db
     .insert(schema.users)
     .values({
@@ -33,25 +44,7 @@ async function seed() {
     console.log("Admin user already exists");
   }
 
-  // Create IT admin
-  const [itAdmin] = await db
-    .insert(schema.users)
-    .values({
-      email: "it@agency.com",
-      name: "IT Admin",
-      passwordHash,
-      role: "it_admin",
-    })
-    .onConflictDoNothing()
-    .returning();
-
-  if (itAdmin) {
-    console.log("Created IT admin user:", itAdmin.email);
-  } else {
-    console.log("IT admin user already exists");
-  }
-
-  // Create sample agent
+  // Create a sample agent
   const [agent] = await db
     .insert(schema.users)
     .values({
@@ -65,8 +58,6 @@ async function seed() {
 
   if (agent) {
     console.log("Created sample agent:", agent.email);
-
-    // Create billing record
     await db
       .insert(schema.agentBilling)
       .values({ agentId: agent.id })
@@ -75,7 +66,8 @@ async function seed() {
     console.log("Sample agent already exists");
   }
 
-  console.log("\nDefault password for all users: admin123");
+  console.log("\nDefault password for DB users: admin123");
+  console.log("IT admin login: use IT_ADMIN_USERNAME / IT_ADMIN_PASSWORD from .env.local");
   console.log("Done!");
 }
 

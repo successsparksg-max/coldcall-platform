@@ -1,20 +1,19 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "./auth";
 import { NextResponse } from "next/server";
+import { getSessionFromCookie, type SessionUser } from "./auth";
 
-export async function getSession() {
-  return getServerSession(authOptions);
+export async function getSession(): Promise<SessionUser | null> {
+  return getSessionFromCookie();
 }
 
-export async function requireAuth() {
-  const session = await getSession();
-  if (!session?.user) {
+export async function requireAuth(): Promise<SessionUser> {
+  const user = await getSession();
+  if (!user) {
     throw new AuthError("Unauthorized", 401);
   }
-  return session.user;
+  return user;
 }
 
-export async function requireRole(...roles: string[]) {
+export async function requireRole(...roles: string[]): Promise<SessionUser> {
   const user = await requireAuth();
   if (!roles.includes(user.role)) {
     throw new AuthError("Forbidden", 403);
@@ -22,7 +21,7 @@ export async function requireRole(...roles: string[]) {
   return user;
 }
 
-export async function requireAgentAccess(agentId: string) {
+export async function requireAgentAccess(agentId: string): Promise<SessionUser> {
   const user = await requireAuth();
   if (user.role === "admin" || user.role === "it_admin") return user;
   if (user.id !== agentId) {

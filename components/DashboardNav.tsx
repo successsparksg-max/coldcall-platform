@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -10,6 +10,8 @@ import {
   LogOut,
   Phone,
   Settings,
+  KeyRound,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -21,8 +23,9 @@ interface NavItem {
 
 export function DashboardNav() {
   const pathname = usePathname();
-  const { data: session } = useSession();
-  const role = session?.user?.role;
+  const router = useRouter();
+  const { user } = useAuth();
+  const role = user?.role;
 
   const agentNav: NavItem[] = [
     {
@@ -51,11 +54,25 @@ export function DashboardNav() {
       href: "/it-admin",
       icon: <Settings className="h-4 w-4" />,
     },
+    {
+      label: "Manage Users",
+      href: "/it-admin/users",
+      icon: <Users className="h-4 w-4" />,
+    },
   ];
 
   let navItems: NavItem[] = agentNav;
   if (role === "admin") navItems = [...adminNav, ...agentNav];
   else if (role === "it_admin") navItems = itAdminNav;
+
+  // Change password link (not for IT admin since their password is in env)
+  const showChangePassword = role && role !== "it_admin";
+
+  async function handleSignOut() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <div className="flex h-screen w-56 flex-col border-r bg-gray-50/50">
@@ -79,18 +96,32 @@ export function DashboardNav() {
             {item.label}
           </Link>
         ))}
+        {showChangePassword && (
+          <Link
+            href="/change-password"
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+              pathname === "/change-password"
+                ? "bg-gray-200 font-medium"
+                : "hover:bg-gray-100"
+            )}
+          >
+            <KeyRound className="h-4 w-4" />
+            Change Password
+          </Link>
+        )}
       </nav>
       <div className="border-t p-2">
         <div className="px-3 py-2 text-xs text-gray-500">
-          {session?.user?.name}
+          {user?.name}
           <br />
-          <span className="capitalize">{role}</span>
+          <span className="capitalize">{role?.replace("_", " ")}</span>
         </div>
         <Button
           variant="ghost"
           className="w-full justify-start gap-2"
           size="sm"
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={handleSignOut}
         >
           <LogOut className="h-4 w-4" />
           Sign Out

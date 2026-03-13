@@ -1,6 +1,5 @@
 "use client";
 
-import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -26,18 +25,33 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
 
-    if (result?.error) {
-      setError("Invalid email or password");
-      setLoading(false);
-    } else {
-      router.push("/dashboard");
+      if (!res.ok || !data.success) {
+        setError(data.error || "Invalid credentials");
+        setLoading(false);
+        return;
+      }
+
+      // Redirect based on role
+      const role = data.data?.role;
+      if (role === "admin") {
+        router.push("/admin");
+      } else if (role === "it_admin") {
+        router.push("/it-admin");
+      } else {
+        router.push("/dashboard");
+      }
       router.refresh();
+    } catch {
+      setError("Network error. Please try again.");
+      setLoading(false);
     }
   }
 
@@ -56,12 +70,13 @@ export default function LoginPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email / Username</Label>
               <Input
                 id="email"
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@example.com or it-admin"
                 required
               />
             </div>

@@ -1,14 +1,14 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/schema";
-import { requireRole, handleAuthError } from "@/lib/auth-helpers";
+import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
 import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 
 const updateUserSchema = z.object({
   name: z.string().min(1).optional(),
-  role: z.enum(["agent", "admin", "it_admin"]).optional(),
+  role: z.enum(["agent", "admin"]).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -17,12 +17,21 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireRole("admin");
+    const user = await requireAuth();
+    if (user.role !== "admin" && user.role !== "it_admin") {
+      return apiError("Forbidden", 403);
+    }
+
     const { id } = await params;
     const body = await req.json();
     const parsed = updateUserSchema.safeParse(body);
     if (!parsed.success) {
       return apiError("Invalid input", 422);
+    }
+
+    // Admin cannot promote to admin
+    if (user.role === "admin" && parsed.data.role === "admin") {
+      return apiError("Admins cannot promote users to admin role", 403);
     }
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
@@ -55,7 +64,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireRole("admin");
+    const user = await requireAuth();
+    if (user.role !== "admin" && user.role !== "it_admin") {
+      return apiError("Forbidden", 403);
+    }
+
     const { id } = await params;
 
     const [updated] = await db

@@ -1,18 +1,16 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getSessionFromCookie } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
 export default async function Home() {
-  const session = await getServerSession(authOptions);
+  const user = await getSessionFromCookie();
 
-  if (!session) {
+  if (!user) {
     redirect("/login");
   }
 
-  const role = session.user.role;
-  if (role === "admin") {
+  if (user.role === "admin") {
     redirect("/admin");
-  } else if (role === "it_admin") {
+  } else if (user.role === "it_admin") {
     redirect("/it-admin");
   } else {
     redirect("/dashboard");
