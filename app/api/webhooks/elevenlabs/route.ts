@@ -82,6 +82,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. If call completed, trigger post-call analysis
+    console.log(`[webhook] conversationId=${conversationId} status=${status} hasTranscript=${!!data.transcript}`);
+
     if (status === "done" && data.transcript) {
       const transcriptText = data.transcript
         .filter(
@@ -90,27 +92,41 @@ export async function POST(req: NextRequest) {
         .map((e: { role: string; message: string }) => `${e.role}: ${e.message}`)
         .join("\n");
 
-      await inngest.send({
-        name: "call/analyze-transcript",
-        data: {
-          conversationId,
-          transcriptText,
-          callDurationSecs: durationSecs,
-          cost: data.metadata?.cost || 0,
-          recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
-        },
-      });
+      console.log(`[webhook] Sending analyze-transcript event, transcript length: ${transcriptText.length}`);
+
+      try {
+        await inngest.send({
+          name: "call/analyze-transcript",
+          data: {
+            conversationId,
+            transcriptText,
+            callDurationSecs: durationSecs,
+            cost: data.metadata?.cost || 0,
+            recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
+          },
+        });
+        console.log("[webhook] analyze-transcript event sent successfully");
+      } catch (inngestErr) {
+        console.error("[webhook] Failed to send analyze-transcript event:", inngestErr);
+      }
+    } else {
+      console.log(`[webhook] Skipping analysis: status=${status}, hasTranscript=${!!data.transcript}`);
     }
 
     // 5. Unblock the call execution loop
-    await inngest.send({
-      name: "elevenlabs/call-completed",
-      data: { conversation_id: conversationId },
-    });
+    try {
+      await inngest.send({
+        name: "elevenlabs/call-completed",
+        data: { conversation_id: conversationId },
+      });
+      console.log("[webhook] call-completed event sent");
+    } catch (inngestErr) {
+      console.error("[webhook] Failed to send call-completed event:", inngestErr);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Webhook error:", error);
+    console.error("[webhook] Webhook handler error:", error);
     return NextResponse.json({ ok: true }); // Always 200 to avoid retries
   }
 }
