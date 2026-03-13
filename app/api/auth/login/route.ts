@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log("[login] attempting:", { email, envUsername: process.env.IT_ADMIN_USERNAME, envPasswordSet: !!process.env.IT_ADMIN_PASSWORD });
     const user = await authenticate(email, password);
     if (!user) {
       return NextResponse.json(
