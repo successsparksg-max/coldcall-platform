@@ -129,7 +129,43 @@ export async function PUT(
       await db.insert(agentCredentials).values(values);
     }
 
-    return apiSuccess({ message: "Credentials saved" });
+    // Auto-configure ElevenLabs webhook URL
+    let webhookConfigured = false;
+    let webhookError: string | null = null;
+    try {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+      if (appUrl) {
+        const webhookUrl = `${appUrl}/api/webhooks/elevenlabs`;
+        const res = await fetch(
+          `https://api.elevenlabs.io/v1/convai/agents/${data.elevenlabsAgentId}`,
+          {
+            method: "PATCH",
+            headers: {
+              "xi-api-key": data.elevenlabsApiKey,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              platform_settings: {
+                webhook: { url: webhookUrl },
+              },
+            }),
+          }
+        );
+        webhookConfigured = res.ok;
+        if (!res.ok) {
+          webhookError = `ElevenLabs returned ${res.status}`;
+        }
+      }
+    } catch (err) {
+      webhookError =
+        err instanceof Error ? err.message : "Failed to set webhook";
+    }
+
+    return apiSuccess({
+      message: "Credentials saved",
+      webhookConfigured,
+      webhookError,
+    });
   } catch (error) {
     return handleAuthError(error);
   }

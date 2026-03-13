@@ -81,7 +81,13 @@ export function CredentialForm({
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success("Credentials saved");
+        if (data.data?.webhookConfigured) {
+          toast.success("Credentials saved & webhook configured automatically");
+        } else if (data.data?.webhookError) {
+          toast.success("Credentials saved, but webhook auto-config failed: " + data.data.webhookError + ". Set it manually in ElevenLabs.");
+        } else {
+          toast.success("Credentials saved");
+        }
       } else {
         toast.error(data.error || "Failed to save");
       }
