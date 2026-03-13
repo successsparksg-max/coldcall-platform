@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Play, Pause, XCircle, Star, ArrowLeft } from "lucide-react";
+import { Play, Pause, XCircle, Star, ArrowLeft, Trash2 } from "lucide-react";
 import Link from "next/link";
 import type { CallList, CallEntryWithAnalysis } from "@/lib/types";
 import { toast } from "sonner";
@@ -89,6 +89,29 @@ export default function CallListDetailPage({
       toast.error(`Failed to ${action}`);
     }
   }
+
+  async function handleRemoveEntry(entryId: string) {
+    try {
+      const res = await fetch(`/api/call-lists/${id}/entries/${entryId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Entry removed");
+        fetchData();
+      } else {
+        toast.error(data.error || "Failed to remove entry");
+      }
+    } catch {
+      toast.error("Failed to remove entry");
+    }
+  }
+
+  const canRemoveEntries =
+    list?.callStatus === "ready" ||
+    list?.callStatus === "paused" ||
+    list?.callStatus === "completed" ||
+    list?.callStatus === "cancelled";
 
   const filteredEntries =
     filter === "all"
@@ -260,8 +283,27 @@ export default function CallListDetailPage({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-xs text-gray-400">
-                  {expandedEntry === entry.id ? "Close" : "Details"}
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 cursor-pointer">
+                      {expandedEntry === entry.id ? "Close" : "Details"}
+                    </span>
+                    {canRemoveEntries &&
+                      (entry.callStatus === "pending" ||
+                        entry.callStatus === "skipped") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveEntry(entry.id);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                  </div>
                 </TableCell>
               </TableRow>
               {expandedEntry === entry.id && entry.analysis && (
