@@ -1,36 +1,215 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ColdCall AI Platform
+
+A multi-tenant SaaS platform for insurance agencies to automate outbound cold calls using AI voice agents. Agents upload Excel spreadsheets of contacts, and the system places calls using **ElevenLabs Conversational AI** — a real-time AI voice agent that conducts live conversations. After each call, an LLM analyzes the transcript to extract ratings, summaries, booking status, and lead information.
+
+## Features
+
+- **Multi-tenant architecture** — Each agent operates in isolation with their own credentials, call lists, and dashboards
+- **AI-powered voice calls** — ElevenLabs Conversational AI handles live phone conversations using cloned or selected voices
+- **Dual telephony support** — Twilio (via ElevenLabs) or DIDWW (direct SIP) per agent
+- **Excel upload with validation** — Standardized template with deterministic server-side validation (no LLM)
+- **Durable call execution** — Inngest step functions handle sequential call loops with pause/resume/cancel
+- **Post-call analysis** — DeepSeek (via OpenRouter) extracts ratings, summaries, emails, names, and booking status from transcripts
+- **Role-based dashboards** — Agent dashboard, admin master dashboard, and IT admin credential panel
+- **Encrypted credentials** — AES-256-GCM encryption for all API keys stored at rest
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Frontend + API | **Next.js 15** (App Router) |
+| Database | **NeonDB** (serverless PostgreSQL) |
+| ORM | **Drizzle ORM** (neon-http adapter) |
+| Background Jobs | **Inngest** (durable step functions) |
+| Voice AI | **ElevenLabs Conversational AI** |
+| Telephony | **Twilio** or **DIDWW** (per agent) |
+| Post-call Analysis | **DeepSeek** via **OpenRouter** |
+| Auth | **NextAuth.js** (Credentials provider, JWT) |
+| UI | **shadcn/ui** + **Tailwind CSS** |
+| Validation | **Zod** |
+
+## Project Structure
+
+```
+app/
+  dashboard/          # Agent pages — call lists, upload, list detail
+  admin/              # Agency head pages — master dashboard, agent drill-down
+  it-admin/           # IT admin pages — credential management
+  login/              # Authentication
+  api/
+    auth/             # NextAuth handler
+    users/            # User CRUD (admin only)
+    credentials/      # Credential CRUD + connectivity test
+    call-lists/       # Upload, list, detail, start/pause/resume/cancel
+    webhooks/         # ElevenLabs post-call webhook
+    admin/            # Admin stats, agent listing, billing
+    inngest/          # Inngest serve endpoint
+    template/         # Excel template download
+
+lib/
+  schema.ts           # Drizzle ORM schema (7 tables)
+  db.ts               # NeonDB connection
+  auth.ts             # NextAuth configuration
+  encryption.ts       # AES-256-GCM encrypt/decrypt
+  elevenlabs.ts       # Outbound call initiation (Twilio + DIDWW)
+  excel-parser.ts     # SheetJS-based template parser
+  validators.ts       # Phone normalization + enum validation
+  inngest/
+    client.ts         # Inngest client with typed events
+    execute-calls.ts  # Durable call loop function
+    analyze-transcript.ts  # Post-call LLM analysis
+
+components/           # React components (dashboard, forms, cards, badges)
+scripts/seed.ts       # Database seed script
+schema.sql            # Raw SQL for table creation
+```
+
+## Database Schema
+
+7 tables with row-level tenant isolation:
+
+- **users** — Agents, admins, IT admins (with password hash)
+- **agent_credentials** — Encrypted ElevenLabs/telephony credentials per agent
+- **agent_billing** — Payment tracking and billing cycles
+- **call_lists** — Uploaded Excel files with execution status
+- **call_entries** — Individual contacts within a list
+- **calls** — Call records with post-call analysis results
+- **upload_validations** — Upload quality tracking
+
+## User Roles
+
+| Role | Access |
+|------|--------|
+| **agent** | Own dashboard, upload lists, view call results |
+| **admin** | Master dashboard, all agents, billing management |
+| **it_admin** | Credential management for all agents |
+
+## Core User Flow
+
+```
+Agent sets up ElevenLabs account (voice + script + phone number)
+  -> IT admin enters credentials into platform
+  -> Agent downloads Excel template
+  -> Fills in contacts, uploads to dashboard
+  -> System validates (synchronous, no LLM)
+  -> Agent presses "Start"
+  -> Backend iterates through list via Inngest:
+      For each number:
+        -> Calls ElevenLabs API (Twilio or DIDWW path)
+        -> AI agent has live conversation
+        -> ElevenLabs fires webhook with transcript
+        -> DeepSeek analyzes transcript
+        -> Dashboard updates with results
+  -> Agent sees ratings, summaries, booking status
+  -> Agency head monitors all agents on master dashboard
+```
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- A NeonDB database
+- ElevenLabs account(s) with Conversational AI configured
+- OpenRouter API key (for DeepSeek post-call analysis)
+- Inngest account (for background job processing)
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Set up environment variables
+
+Copy `.env.local.example` or create `.env.local`:
+
+```bash
+# NeonDB
+DATABASE_URL=postgresql://user:pass@ep-xyz.us-east-2.aws.neon.tech/dbname?sslmode=require
+
+# NextAuth
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=<random-32-char-string>
+
+# OpenRouter
+OPENROUTER_API_KEY=sk-or-...
+
+# Encryption key for agent credentials (base64-encoded 32-byte key)
+CREDENTIALS_ENCRYPTION_KEY=<base64-key>
+
+# Inngest
+INNGEST_EVENT_KEY=<key>
+INNGEST_SIGNING_KEY=<key>
+
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+### 3. Create database tables
+
+Run the SQL in `schema.sql` against your NeonDB instance, or use Drizzle Kit:
+
+```bash
+npx drizzle-kit push
+```
+
+### 4. Seed initial users
+
+```bash
+npx tsx scripts/seed.ts
+```
+
+This creates three users (all with password `admin123`):
+- `admin@agency.com` (admin)
+- `it@agency.com` (IT admin)
+- `agent@agency.com` (agent)
+
+### 5. Run the development server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) — you'll be redirected to the login page.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 6. Start Inngest dev server (for background jobs)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npx inngest-cli@latest dev
+```
 
-## Learn More
+## Deployment
 
-To learn more about Next.js, take a look at the following resources:
+1. Deploy to **Vercel** (`vercel deploy`)
+2. Set all environment variables in Vercel dashboard
+3. Connect **Inngest** to your Vercel project
+4. Configure ElevenLabs webhook URLs to `https://yourdomain.com/api/webhooks/elevenlabs`
+5. Point DNS to Vercel
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API Routes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Method | Route | Description |
+|--------|-------|-------------|
+| POST | `/api/auth/[...nextauth]` | NextAuth handler |
+| GET/POST | `/api/users` | List / create users (admin) |
+| PATCH/DELETE | `/api/users/[id]` | Update / deactivate user (admin) |
+| GET/PUT | `/api/credentials/[agentId]` | Get (masked) / upsert credentials |
+| POST | `/api/credentials/[agentId]/test` | Test credential connectivity |
+| GET | `/api/template/download` | Download Excel template |
+| POST | `/api/call-lists/upload` | Upload and validate Excel file |
+| GET | `/api/call-lists` | List agent's call lists |
+| GET/DELETE | `/api/call-lists/[id]` | Get detail / delete call list |
+| POST | `/api/call-lists/[id]/start` | Start calling |
+| POST | `/api/call-lists/[id]/pause` | Pause the call loop |
+| POST | `/api/call-lists/[id]/resume` | Resume from paused |
+| POST | `/api/call-lists/[id]/cancel` | Cancel remaining calls |
+| POST | `/api/webhooks/elevenlabs` | ElevenLabs post-call webhook |
+| GET | `/api/admin/agents` | All agents with stats (admin) |
+| GET | `/api/admin/agents/[id]` | Single agent detail (admin) |
+| GET/PATCH | `/api/admin/billing/[agentId]` | Get / update billing (admin) |
+| GET | `/api/admin/stats` | Platform-wide aggregates (admin) |
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Private — All rights reserved.
