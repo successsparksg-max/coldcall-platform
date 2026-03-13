@@ -133,7 +133,8 @@ NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=<random-32-char-string>
 
 # Vercel AI Gateway (post-call transcript analysis)
-VERCEL_AI_GATEWAY_KEY=vck_...
+AI_GATEWAY_BASE_URL=https://gateway.vercel.ai/v1
+AI_GATEWAY_API_KEY=vck_...
 AI_MODEL=deepseek/deepseek-v3.2
 
 # Encryption key for agent credentials (base64-encoded 32-byte key)

@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { calls } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { ANALYSIS_PROMPT } from "@/lib/analysis-prompt";
+import { generateText } from "ai";
+import { gateway } from "@/lib/gateway";
 
 export const analyzeCallTranscript = inngest.createFunction(
   { id: "analyze-call-transcript", retries: 2 },
@@ -12,28 +14,12 @@ export const analyzeCallTranscript = inngest.createFunction(
 
     const analysis = await step.run("llm-analysis", async () => {
       const model = process.env.AI_MODEL || "deepseek/deepseek-v3.2";
-      const response = await fetch(
-        "https://gateway.vercel.ai/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.VERCEL_AI_GATEWAY_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              {
-                role: "user",
-                content: `${ANALYSIS_PROMPT}\n\nTranscript:\n${transcriptText}`,
-              },
-            ],
-            temperature: 0,
-          }),
-        }
-      );
-      const data = await response.json();
-      return data.choices?.[0]?.message?.content || "{}";
+      const { text } = await generateText({
+        model: gateway(model),
+        prompt: `${ANALYSIS_PROMPT}\n\nTranscript:\n${transcriptText}`,
+        temperature: 0,
+      });
+      return text || "{}";
     });
 
     const cleaned = await step.run("clean-analysis", async () => {
