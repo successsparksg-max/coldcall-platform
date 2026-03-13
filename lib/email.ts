@@ -1,15 +1,9 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-function getTransporter() {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: parseInt(process.env.SMTP_PORT || "587"),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+function getResend() {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error("RESEND_API_KEY not set");
+  return new Resend(key);
 }
 
 export async function sendWelcomeEmail(
@@ -19,8 +13,6 @@ export async function sendWelcomeEmail(
   role: string,
   loginUrl: string
 ) {
-  const transporter = getTransporter();
-
   const roleLabel =
     role === "admin" ? "Admin (Agency Head)" : "Insurance Agent";
 
@@ -52,8 +44,9 @@ export async function sendWelcomeEmail(
   `;
 
   try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    const resend = getResend();
+    await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || "ColdCall AI <onboarding@resend.dev>",
       to: toEmail,
       subject: "Welcome to ColdCall AI Platform - Your Account Details",
       html,
