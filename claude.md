@@ -1,0 +1,1223 @@
+# Multi-Tenant AI Cold-Calling Platform — Complete Build Specification
+
+## Purpose
+
+This is the single, authoritative build specification for the entire system. Hand this file (and the accompanying `coldcall_upload_template.xlsx`) to a coding agent to build the platform from scratch.
+
+---
+
+## 1. Product Overview
+
+### What This Is
+
+A multi-tenant SaaS platform for an insurance agency. Agents (insurance salespeople) upload Excel spreadsheets of phone numbers using a standardized template. The system validates the data, then places outbound calls using **ElevenLabs Conversational AI** — a real-time AI voice agent that has live conversations with the callee. After each call, an LLM analyzes the conversation transcript to extract ratings, summaries, booking status, and lead information. Call outcomes and analysis are tracked on per-agent dashboards. The agency head has a master dashboard to monitor all agents and their billing status.
+
+### Core User Flow
+
+```
+Agent sets up ElevenLabs account:
+  → Provides voice sample (clone or select from library)
+  → Writes cold-calling script/instructions for the AI agent
+  → Links Twilio account or configures DIDWW SIP trunk
+  → Gives resulting IDs and API key to IT admin
+IT admin enters credentials into our platform
+Agent downloads Excel template
+  → Fills in phone numbers and contact info
+  → Uploads to dashboard
+  → System validates format (no LLM needed — deterministic checks)
+  → Agent presses "Start"
+  → Backend iterates through the list one-by-one:
+      For each number:
+        → Calls ElevenLabs Conversational AI API
+        → ElevenLabs provisions call via Twilio or DIDWW
+        → AI agent has a LIVE CONVERSATION with the contact
+          (using the agent's cloned voice and cold-calling script)
+        → Call ends
+        → ElevenLabs fires webhook with transcript + metadata
+        → LLM (DeepSeek via OpenRouter) analyzes transcript
+        → Dashboard updates with call status, rating, summary, booking status
+  → Numbers that didn't pick up are reflected on agent dashboard
+  → Agency head sees all agents + billing on master dashboard
+```
+
+### Key Architecture Facts
+
+- **ElevenLabs Conversational AI** runs the live voice agent during calls (STT → LLM reasoning → TTS, all real-time). Each agent provides their own **voice sample** (cloned or selected from ElevenLabs' voice library) and their own **cold-calling script/instructions** (the prompt that tells the AI how to conduct the insurance conversation). These are configured by the agent in the ElevenLabs dashboard before onboarding.
+- **Twilio is managed by ElevenLabs**, not called directly by our backend. Agents link their Twilio account inside ElevenLabs. Alternatively, agents can use **DIDWW** for direct SIP telephony — both are first-class options.
+- **DeepSeek (via OpenRouter)** handles **post-call transcript analysis** only — not Excel parsing. It extracts ratings, summaries, emails, names, and booking status from call transcripts.
+- **Excel parsing uses a fixed template** with deterministic server-side validation. No LLM involved in parsing.
+- **Calls are triggered manually** — agent presses "Start" on their dashboard, backend processes numbers sequentially with a wait between each call (calls are multi-minute live conversations).
+- **Each agent has their own ElevenLabs account** with their own API key, agent ID, and phone number. An IT admin enters these credentials into the system. The agent is responsible for setting up their voice and script in ElevenLabs; the IT admin only enters the resulting IDs and keys into our platform.
+
+---
+
+## 2. Target Stack
+
+| Component | Technology |
+|-----------|------------|
+| Frontend + API | **Vercel** (Next.js) |
+| Database | **NeonDB** (serverless PostgreSQL) |
+| Background Jobs | **Inngest** (durable step functions on Vercel) |
+| Voice AI | **ElevenLabs Conversational AI** (agent-owned accounts) |
+| Telephony | **Twilio** (linked inside ElevenLabs) or **DIDWW** (direct SIP) — per agent |
+| Post-call analysis | **DeepSeek** via **OpenRouter** (platform-level API key) |
+| Auth | **NextAuth.js** |
+
+### Why Inngest
+
+The call loop is a long-running sequential process — agent presses Start, backend iterates through potentially hundreds of numbers, each call is a multi-minute live AI conversation. Vercel serverless functions have timeout limits (10s hobby, 300s pro). Inngest solves this with durable step functions that survive timeouts, handle retries, can pause between calls, and support `waitForEvent` to wait for ElevenLabs webhooks.
+
+---
+
+## 3. Agent Onboarding: What the Agent Sets Up in ElevenLabs
+
+Before the IT admin can enter credentials into our platform, each agent must complete their own setup in the ElevenLabs dashboard. This is the agent's responsibility, not the IT admin's or the platform's. Our system does not manage voice samples, scripts, or AI agent configuration — ElevenLabs does.
+
+### Step 1: Voice Setup
+
+The agent provides a **voice sample** for the AI to use during calls. Two options:
+
+- **Voice cloning**: Agent records or uploads an audio sample of themselves (or a chosen voice). ElevenLabs clones it and the AI speaks in that voice during calls. This is the typical choice for insurance agents who want the AI to sound like a specific person.
+- **Voice library**: Agent selects a pre-built voice from ElevenLabs' voice library. No recording needed.
+
+The voice is configured at the ElevenLabs account level and linked to the agent's Conversational AI agent.
+
+### Step 2: Cold-Calling Script / Agent Instructions
+
+The agent writes (or has written for them) the **conversation script** — this is the prompt/instructions that tell the ElevenLabs AI agent how to conduct the insurance cold call. This includes:
+
+- **Opening line**: How to greet the callee, introduce the agency, and state the purpose
+- **Product pitch**: What insurance products to discuss, key selling points, pricing guidance
+- **Objection handling**: How to respond to "not interested", "call back later", "how much does it cost"
+- **Qualification questions**: What information to gather (current coverage, family size, budget)
+- **Booking logic**: How to offer and confirm a meeting/appointment with the human agent
+- **Closing**: How to wrap up the call, collect email if offered, say goodbye
+- **Guardrails**: What the AI should NOT say (no guarantees, no specific policy numbers, compliance disclaimers)
+
+This script is entered directly into the ElevenLabs Conversational AI agent configuration. Different agents may have completely different scripts depending on their insurance products, target market, and sales style.
+
+### Step 3: Phone Number Linking
+
+Depending on the telephony path:
+
+- **Twilio path**: Agent links their Twilio account inside the ElevenLabs dashboard. ElevenLabs provisions a phone number and generates a `phnum_` ID. The agent provides this ID to the IT admin.
+- **DIDWW path**: Agent configures their DIDWW number for SIP trunking to ElevenLabs. The agent provides the DIDWW phone number to the IT admin.
+
+### Step 4: Webhook Configuration
+
+The agent (or IT admin) sets the post-call webhook URL in the ElevenLabs agent settings to:
+
+```
+https://yourdomain.com/api/webhooks/elevenlabs
+```
+
+This can also be set programmatically by our platform when the IT admin saves credentials (see Module 2).
+
+### What the Agent Hands to the IT Admin
+
+After completing setup in ElevenLabs, the agent provides the IT admin with:
+
+| Item | Example | Where to find it |
+|------|---------|-------------------|
+| ElevenLabs API Key | `sk_dbd3b41a...` | ElevenLabs → Profile → API Keys |
+| ElevenLabs Agent ID | `agent_01jx78nk7j...` | ElevenLabs → Conversational AI → Agent Settings |
+| Phone Number ID (Twilio) | `phnum_01jy93n2...` | ElevenLabs → Phone Numbers |
+| DIDWW Phone Number (DIDWW) | `+6531252383` | DIDWW dashboard |
+| Outbound Caller ID | `+6531237476` | The number contacts see (Twilio number or DIDWW number) |
+
+The IT admin enters these into our platform's credential form. Our platform never touches the voice sample, script, or AI agent configuration — that stays entirely within ElevenLabs.
+
+---
+
+## 4. The Two Telephony Paths
+
+Both paths use ElevenLabs Conversational AI for the voice agent. The difference is how the phone call is routed. Each agent uses one or the other.
+
+### Path A: Twilio via ElevenLabs
+
+```
+Our backend → POST /v1/convai/twilio/outbound-call
+               → ElevenLabs manages Twilio internally
+               → Twilio dials the contact
+               → Live AI conversation
+               → ElevenLabs fires webhook to us
+```
+
+- **Endpoint**: `POST https://api.elevenlabs.io/v1/convai/twilio/outbound-call`
+- **Body**: `{ agent_id, agent_phone_number_id, to_number }`
+- Agent links their Twilio account in the ElevenLabs dashboard. ElevenLabs provisions a phone number and returns a `phnum_` ID. We never call Twilio directly.
+
+### Path B: DIDWW Direct via ElevenLabs
+
+```
+Our backend → POST /v1/convai/outbound-call
+               → ElevenLabs initiates SIP call via DIDWW
+               → DIDWW routes the call
+               → Live AI conversation
+               → ElevenLabs fires webhook to us
+```
+
+- **Endpoint**: `POST https://api.elevenlabs.io/v1/convai/outbound-call`
+- **Body**: `{ agent_id, from_number, to_number }`
+- Agent has a DIDWW number with SIP trunking configured to ElevenLabs. The `from_number` is the DIDWW number directly. No `agent_phone_number_id` needed.
+
+### Comparison
+
+| | Twilio via ElevenLabs | DIDWW Direct |
+|---|---|---|
+| ElevenLabs endpoint | `/v1/convai/twilio/outbound-call` | `/v1/convai/outbound-call` |
+| Phone number field | `agent_phone_number_id` (ElevenLabs ID) | `from_number` (actual phone number) |
+| Twilio account needed | Yes (linked in ElevenLabs dashboard) | No |
+| DIDWW account needed | No | Yes (SIP trunk to ElevenLabs) |
+
+---
+
+## 5. Database Schema (NeonDB / PostgreSQL)
+
+### Multi-Tenancy Model
+
+Each agent is a tenant. The agency head is a super-admin. The IT admin manages agent credentials. Row-level isolation is enforced at the application layer.
+
+```sql
+-- ============================================================
+-- USERS & AUTH
+-- ============================================================
+
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('agent', 'admin', 'it_admin')),
+    -- 'agent'    = insurance salesperson
+    -- 'admin'    = agency head (sees all agents, manages billing)
+    -- 'it_admin' = systems admin who manages credentials
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
+-- AGENT CREDENTIALS (per-tenant external service accounts)
+-- ============================================================
+
+CREATE TABLE agent_credentials (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    
+    -- ElevenLabs (required for all agents)
+    elevenlabs_api_key TEXT NOT NULL,        -- encrypted; xi-api-key header
+    elevenlabs_agent_id TEXT NOT NULL,       -- e.g. agent_01jx78nk7jftjtb4y8a06m2158
+    elevenlabs_webhook_secret TEXT,          -- for verifying incoming webhooks (optional)
+    
+    -- Telephony path selection
+    telephony_provider TEXT NOT NULL CHECK (telephony_provider IN ('twilio', 'didww')),
+    
+    -- Twilio path fields (required if telephony_provider = 'twilio')
+    elevenlabs_phone_number_id TEXT,         -- e.g. phnum_01jy93n259eac9q0tzbh3bsk6w
+    
+    -- DIDWW path fields (required if telephony_provider = 'didww')
+    didww_phone_number TEXT,                 -- e.g. +6531252383 (actual E.164 number)
+    
+    -- The number contacts see as caller ID
+    outbound_caller_id TEXT,                 -- e.g. +6531237476
+    
+    -- Admin tracking
+    credentials_complete BOOLEAN DEFAULT false,
+    updated_by UUID REFERENCES users(id),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    
+    UNIQUE(agent_id),
+    
+    CONSTRAINT twilio_fields_required CHECK (
+        telephony_provider != 'twilio' OR elevenlabs_phone_number_id IS NOT NULL
+    ),
+    CONSTRAINT didww_fields_required CHECK (
+        telephony_provider != 'didww' OR didww_phone_number IS NOT NULL
+    )
+);
+
+-- ============================================================
+-- BILLING / SUBSCRIPTION TRACKING
+-- ============================================================
+
+CREATE TABLE agent_billing (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan TEXT NOT NULL DEFAULT 'basic',
+    is_paid BOOLEAN DEFAULT false,
+    billing_cycle_start DATE,
+    billing_cycle_end DATE,
+    notes TEXT,
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(agent_id)
+);
+
+-- ============================================================
+-- CALL LISTS (uploaded Excel files, validated into structured data)
+-- ============================================================
+
+CREATE TABLE call_lists (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    
+    -- Upload metadata
+    original_filename TEXT NOT NULL,
+    file_hash TEXT,
+    uploaded_at TIMESTAMPTZ DEFAULT now(),
+    
+    -- Validation status (synchronous, no LLM)
+    parse_status TEXT NOT NULL DEFAULT 'parsed'
+        CHECK (parse_status IN ('parsed', 'failed')),
+    validation_errors JSONB,
+    
+    -- Call execution
+    call_status TEXT NOT NULL DEFAULT 'ready'
+        CHECK (call_status IN ('ready', 'in_progress', 'paused', 'completed', 'cancelled')),
+    total_numbers INTEGER DEFAULT 0,
+    calls_made INTEGER DEFAULT 0,
+    calls_answered INTEGER DEFAULT 0,
+    calls_no_answer INTEGER DEFAULT 0,
+    calls_failed INTEGER DEFAULT 0,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_call_lists_agent ON call_lists(agent_id);
+CREATE INDEX idx_call_lists_status ON call_lists(call_status);
+
+-- ============================================================
+-- CALL LIST ENTRIES (individual contacts within a list)
+-- ============================================================
+
+CREATE TABLE call_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    call_list_id UUID NOT NULL REFERENCES call_lists(id) ON DELETE CASCADE,
+    
+    -- Parsed contact data (from template)
+    phone_number TEXT NOT NULL,             -- normalized to E.164
+    contact_name TEXT NOT NULL,
+    company TEXT,
+    policy_type TEXT,
+    preferred_time TEXT,
+    language TEXT,
+    notes TEXT,
+    
+    -- Call execution state
+    call_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (call_status IN (
+            'pending',      -- not yet called
+            'calling',      -- ElevenLabs call initiated
+            'called',       -- call placed, waiting for completion webhook
+            'answered',     -- call completed (callee picked up, conversation happened)
+            'no_answer',    -- rang but no answer
+            'busy',         -- line busy
+            'failed',       -- API error or call failed
+            'skipped'       -- manually skipped by agent
+        )),
+    
+    -- ElevenLabs response data
+    conversation_id TEXT,                   -- ElevenLabs conversation ID
+    telephony_call_sid TEXT,                -- Twilio Call SID (if Twilio path)
+    call_duration_seconds INTEGER,
+    call_started_at TIMESTAMPTZ,
+    call_ended_at TIMESTAMPTZ,
+    
+    -- Ordering
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_call_entries_list ON call_entries(call_list_id);
+CREATE INDEX idx_call_entries_status ON call_entries(call_list_id, call_status);
+
+-- ============================================================
+-- CALLS (call records with post-call analysis results)
+-- ============================================================
+
+CREATE TABLE calls (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    call_entry_id UUID REFERENCES call_entries(id),
+    
+    -- Call metadata
+    call_time TIMESTAMPTZ DEFAULT now(),
+    calling_number TEXT,                    -- outbound number used
+    phone_number TEXT,                      -- contact's number
+    conversation_id TEXT,                   -- ElevenLabs conversation ID
+    call_id TEXT,                           -- Twilio Call SID or equivalent
+    number_status TEXT DEFAULT 'busy'       -- 'busy' (in progress), 'idle' (done)
+        CHECK (number_status IN ('busy', 'idle')),
+    
+    -- Duration and cost (from ElevenLabs webhook)
+    duration INTEGER,                       -- seconds
+    call_cost DECIMAL(10,4),               -- ElevenLabs combined cost
+    
+    -- Post-call analysis results (from DeepSeek via OpenRouter)
+    rating INTEGER CHECK (rating BETWEEN 1 AND 5),
+    summary TEXT,
+    email TEXT,                             -- extracted from conversation if user provided
+    name TEXT,                              -- user's name extracted from conversation
+    booking_status TEXT CHECK (booking_status IN ('TRUE', 'FALSE')),
+    estimated_cost DECIMAL(10,2),
+    call_type TEXT,
+    
+    -- Raw data
+    transcript TEXT,                        -- full conversation transcript
+    recording_url TEXT,                     -- ElevenLabs history link
+    
+    -- Agent reference
+    elevenlabs_agent_id TEXT,
+    
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_calls_conversation ON calls(conversation_id);
+CREATE INDEX idx_calls_entry ON calls(call_entry_id);
+
+-- ============================================================
+-- UPLOAD VALIDATIONS (observability on upload quality per agent)
+-- ============================================================
+
+CREATE TABLE upload_validations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id UUID NOT NULL REFERENCES users(id),
+    original_filename TEXT NOT NULL,
+    file_hash TEXT,
+    total_rows INTEGER,
+    valid_rows INTEGER,
+    error_rows INTEGER,
+    errors JSONB,
+    warnings JSONB,
+    validation_passed BOOLEAN NOT NULL,
+    call_list_id UUID REFERENCES call_lists(id),
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Encryption Note
+
+All API keys and auth tokens in `agent_credentials` MUST be encrypted at rest. Use application-level AES-256-GCM encryption with a server-side key stored in Vercel environment variables. Never store credentials in plaintext.
+
+---
+
+## 6. Excel Upload Template
+
+### Template Header Format
+
+The template file (`coldcall_upload_template.xlsx`) is provided alongside this spec. It has 7 columns:
+
+| Column | Header | Field Key | Required | Format / Rules |
+|--------|--------|-----------|----------|----------------|
+| A | **Phone Number** | `phone_number` | Yes | `+65XXXXXXXX` (E.164) or `8XXXXXXX` / `9XXXXXXX` (local 8-digit, system prepends `+65`). Digits and optional leading `+` only. |
+| B | **Contact Name** | `contact_name` | Yes | Free text. Must not be empty. |
+| C | **Company** | `company` | No | Free text. |
+| D | **Policy Type** | `policy_type` | No | Dropdown: `Life`, `Health`, `Motor`, `Travel`, `Property`, `Group`, `General`, `Other` |
+| E | **Preferred Call Time** | `preferred_time` | No | Dropdown: `Morning`, `Afternoon`, `Evening`, `Any` |
+| F | **Language** | `language` | No | Dropdown: `English`, `Mandarin`, `Malay`, `Tamil`, `Hindi`, `Other` |
+| G | **Notes** | `notes` | No | Free text. Agent's private notes. |
+
+### Template Structure
+
+- **Row 1**: Column headers (must not be modified by agent)
+- **Row 2**: Hidden row with machine-readable field keys for reliable parsing
+- **Rows 3-5**: Pre-filled example rows (agent deletes before uploading)
+- **Rows 6-1006**: Data entry area (max 1,000 contacts per upload)
+- **Sheet 2 ("Instructions")**: Formatting rules and upload guidance
+
+### Upload Validation Flow (Synchronous, No LLM)
+
+Validation runs in the API route — no background job needed.
+
+```
+1. Agent uploads .xlsx via POST /api/call-lists/upload
+
+2. File-level checks:
+   ✓ File is .xlsx
+   ✓ File size ≤ 10MB
+   ✓ Has a sheet (use first sheet)
+
+3. Header validation:
+   ✓ Read Row 2 (hidden field keys) or Row 1 (visible headers)
+   ✓ Required columns exist: phone_number, contact_name
+   ✓ Map column positions from field keys
+
+4. Row-by-row validation (from Row 3, skip blanks):
+   ✓ phone_number not empty, matches /^\+?\d{7,15}$/
+   ✓ If 8 digits starting with 8 or 9, prepend +65
+   ✓ contact_name not empty / not just whitespace
+   ✓ Optional enum fields in allowed values if present
+   Collect per-row errors with row numbers
+
+5. List-level checks:
+   ✓ At least 1 valid row, no more than 1,000
+   ✓ Flag duplicate phone numbers (warn, don't reject)
+
+6. If fails → 422 with structured errors, no DB records created
+   If passes → create call_lists + call_entries rows, return 201
+```
+
+### Validation Response Formats
+
+```typescript
+// 422 failure
+{
+  success: false,
+  errors: {
+    file: string | null,
+    headers: string | null,
+    rows: [{ row: number, field: string, message: string }]
+  },
+  summary: { totalRows: number, validRows: number, errorRows: number }
+}
+
+// 201 success
+{
+  success: true,
+  callListId: string,
+  totalEntries: number,
+  warnings: [{ type: string, message: string }]
+}
+```
+
+### Phone Number Normalization Logic
+
+```typescript
+export function normalizePhone(raw: string): { normalized: string | null; error: string | null } {
+  const cleaned = raw.toString().replace(/[\s\-\(\)\.]/g, '');
+  
+  if (!/^\+?\d{7,15}$/.test(cleaned))
+    return { normalized: null, error: `Invalid phone format: ${raw}` };
+  
+  // Singapore local: 8 digits starting with 8 or 9
+  if (/^[89]\d{7}$/.test(cleaned))
+    return { normalized: `+65${cleaned}`, error: null };
+  
+  // Already has + prefix
+  if (cleaned.startsWith('+'))
+    return { normalized: cleaned, error: null };
+  
+  // Bare digits ≥10 chars — likely missing +
+  if (cleaned.length >= 10)
+    return { normalized: `+${cleaned}`, error: null };
+  
+  return { normalized: null, error: `Cannot determine country code for: ${raw}` };
+}
+```
+
+---
+
+## 7. Module Breakdown
+
+### Module 1: Auth & User Management
+
+**Stack**: NextAuth.js
+
+**Routes**:
+```
+POST   /api/auth/[...nextauth]     — NextAuth handler
+GET    /api/users                   — list users (admin only)
+POST   /api/users                   — create user (admin only)
+PATCH  /api/users/[id]              — update user (admin only)
+DELETE /api/users/[id]              — deactivate user (admin only)
+```
+
+**Roles**: `agent` (own data only), `admin` (all agents + billing), `it_admin` (credentials)
+
+Middleware enforces role-based access. Session includes `userId` and `role`. All data queries filter by `agent_id` unless role is `admin`.
+
+---
+
+### Module 2: Credential Management
+
+**Who uses it**: IT admin (and admin)
+
+**Routes**:
+```
+GET    /api/credentials/[agentId]       — get credentials (masked values)
+PUT    /api/credentials/[agentId]       — upsert credentials
+POST   /api/credentials/[agentId]/test  — test connectivity
+```
+
+**Implementation**:
+- GET returns masked values (e.g., `sk_****7f3a`)
+- PUT encrypts before storing
+- Test endpoint verifies per provider:
+
+```typescript
+// Test 1: ElevenLabs API key — GET /v1/user
+// Test 2: ElevenLabs agent exists — GET /v1/convai/agents/{agent_id}
+// Test 3 (Twilio): Phone number ID exists — GET /v1/convai/phone-numbers/{id}
+// Test 3 (DIDWW): Validate phone number format only (SIP can't be tested remotely)
+```
+
+**Credential Form** adapts based on telephony provider selection:
+
+```
+Always shown:
+  - ElevenLabs API Key (required)
+  - ElevenLabs Agent ID (required)
+  - Telephony Provider: ( ) Twilio  ( ) DIDWW
+
+If Twilio:
+  - ElevenLabs Phone Number ID (required, phnum_...)
+  - Outbound Caller ID (required, the number contacts see)
+
+If DIDWW:
+  - DIDWW Phone Number (required, also serves as caller ID)
+```
+
+On save, consider auto-configuring the ElevenLabs webhook URL via API:
+```typescript
+await fetch(`https://api.elevenlabs.io/v1/convai/agents/${agentId}`, {
+  method: 'PATCH',
+  headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    webhook: { url: 'https://yourdomain.com/api/webhooks/elevenlabs' },
+  }),
+});
+```
+
+---
+
+### Module 3: Excel Upload & Validation
+
+**Who uses it**: Agents
+
+**Routes**:
+```
+GET    /api/template/download        — download blank template
+POST   /api/call-lists/upload        — upload filled template (synchronous validation)
+GET    /api/call-lists                — list agent's call lists
+GET    /api/call-lists/[id]          — get call list with entries
+DELETE /api/call-lists/[id]          — delete a call list
+```
+
+Validation is fully described in Section 5 above. No Inngest function needed — validation is synchronous.
+
+Optional: client-side pre-validation using SheetJS (`xlsx`) in the browser for instant feedback before upload.
+
+---
+
+### Module 4: Call Execution Engine
+
+**Who triggers it**: Agent presses "Start" on dashboard
+
+**Routes**:
+```
+POST   /api/call-lists/[id]/start    — start calling
+POST   /api/call-lists/[id]/pause    — pause the loop
+POST   /api/call-lists/[id]/resume   — resume from where paused
+POST   /api/call-lists/[id]/cancel   — cancel remaining calls
+```
+
+**Inngest Function**: `execute-call-list`
+
+**The unified call initiation function** (branches on telephony provider):
+
+```typescript
+// lib/elevenlabs.ts
+
+export async function initiateOutboundCall(
+  credentials: AgentCredentials,
+  toNumber: string
+): Promise<{ conversation_id: string; callSid?: string }> {
+  
+  let url: string;
+  let body: Record<string, string>;
+  
+  if (credentials.telephony_provider === 'twilio') {
+    url = 'https://api.elevenlabs.io/v1/convai/twilio/outbound-call';
+    body = {
+      agent_id: credentials.elevenlabs_agent_id,
+      agent_phone_number_id: credentials.elevenlabs_phone_number_id!,
+      to_number: toNumber,
+    };
+  } else {
+    url = 'https://api.elevenlabs.io/v1/convai/outbound-call';
+    body = {
+      agent_id: credentials.elevenlabs_agent_id,
+      from_number: credentials.didww_phone_number!,
+      to_number: toNumber,
+    };
+  }
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': credentials.elevenlabs_api_key,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`ElevenLabs call failed (${response.status}): ${error}`);
+  }
+  
+  return await response.json();
+}
+```
+
+**Inngest function**:
+
+```typescript
+inngest.createFunction(
+  { id: 'execute-call-list', retries: 0 },
+  { event: 'calllist/start' },
+  async ({ event, step }) => {
+    const { callListId, agentId } = event.data;
+    
+    const entries = await step.run('fetch-entries', async () => {
+      // SELECT * FROM call_entries 
+      // WHERE call_list_id = X AND call_status = 'pending'
+      // ORDER BY sort_order
+    });
+    
+    const credentials = await step.run('fetch-credentials', async () => {
+      // Get + decrypt agent's credentials
+    });
+    
+    for (const entry of entries) {
+      const shouldContinue = await step.run(`check-${entry.id}`, async () => {
+        const list = await db.query(
+          'SELECT call_status FROM call_lists WHERE id = $1', [callListId]
+        );
+        return list.call_status === 'in_progress';
+      });
+      
+      if (!shouldContinue) break;
+      
+      const callResult = await step.run(`place-call-${entry.id}`, async () => {
+        await db.query(
+          'UPDATE call_entries SET call_status = $1 WHERE id = $2',
+          ['calling', entry.id]
+        );
+        
+        const result = await initiateOutboundCall(credentials, entry.phone_number);
+        
+        await db.query(
+          `UPDATE call_entries 
+           SET conversation_id = $1, telephony_call_sid = $2, 
+               call_status = 'called', updated_at = now()
+           WHERE id = $3`,
+          [result.conversation_id, result.callSid || null, entry.id]
+        );
+        
+        await db.query(
+          `INSERT INTO calls 
+           (call_entry_id, conversation_id, call_id, calling_number, 
+            phone_number, number_status, elevenlabs_agent_id)
+           VALUES ($1, $2, $3, $4, $5, 'busy', $6)`,
+          [entry.id, result.conversation_id, result.callSid || null,
+           credentials.outbound_caller_id, entry.phone_number,
+           credentials.elevenlabs_agent_id]
+        );
+        
+        return result;
+      });
+      
+      // Wait for ElevenLabs webhook OR timeout after 5 minutes
+      await step.waitForEvent(`wait-${entry.id}`, {
+        event: 'elevenlabs/call-completed',
+        match: 'data.conversation_id',
+        timeout: '5m',
+      });
+      
+      // Buffer between calls
+      await step.sleep(`buffer-${entry.id}`, '10s');
+    }
+    
+    await step.run('finalize', async () => {
+      // Update call_lists: status=completed, aggregate counts
+    });
+  }
+);
+```
+
+---
+
+### Module 5: ElevenLabs Webhook Handler
+
+**Route**: `POST /api/webhooks/elevenlabs`
+
+ElevenLabs fires this webhook after each call ends. The payload is the same regardless of whether the call used Twilio or DIDWW.
+
+**ElevenLabs webhook payload structure**:
+
+```typescript
+interface ElevenLabsWebhookPayload {
+  data: {
+    status: 'done' | string;
+    agent_id: string;
+    conversation_id: string;
+    transcript: Array<{
+      role: 'agent' | 'user';
+      message: string;
+    }>;
+    analysis?: {
+      evaluation_criteria_results?: {
+        call_summary?: { value: string };
+      };
+    };
+    metadata: {
+      call_duration_secs: number;
+      cost: number;
+      phone_call: {
+        call_sid: string;
+        external_number: string;
+        agent_number: string;
+      };
+    };
+  };
+}
+```
+
+**Handler logic**:
+
+```typescript
+export async function POST(req: Request) {
+  const payload = await req.json();
+  const data = payload.data || payload.body?.data;
+  if (!data) return Response.json({ ok: true });
+  
+  const phoneCall = data.metadata?.phone_call || {};
+  const conversationId = data.conversation_id;
+  const callSid = phoneCall.call_sid;
+  const status = data.status;
+  
+  // 1. Update call_entries status
+  if (conversationId) {
+    const newStatus = status === 'done' ? 'answered' : 'failed';
+    await db.query(
+      `UPDATE call_entries SET call_status = $1, 
+       call_duration_seconds = $2, call_ended_at = now(), updated_at = now()
+       WHERE conversation_id = $3`,
+      [newStatus, data.metadata?.call_duration_secs || 0, conversationId]
+    );
+  }
+  
+  // 2. Update calls table
+  if (conversationId) {
+    await db.query(
+      `UPDATE calls SET number_status = 'idle', 
+       duration = $1, call_cost = $2 WHERE conversation_id = $3`,
+      [data.metadata?.call_duration_secs, data.metadata?.cost, conversationId]
+    );
+  }
+  
+  // 3. If call completed, trigger post-call analysis
+  if (status === 'done' && data.transcript) {
+    const transcriptText = data.transcript
+      .filter(e => e.role && e.message)
+      .map(e => `${e.role}: ${e.message}`)
+      .join('\n');
+    
+    await inngest.send({
+      name: 'call/analyze-transcript',
+      data: {
+        conversationId,
+        transcriptText,
+        callDurationSecs: data.metadata?.call_duration_secs,
+        cost: data.metadata?.cost,
+        recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
+      },
+    });
+    
+    // Unblock the call execution loop
+    await inngest.send({
+      name: 'elevenlabs/call-completed',
+      data: { conversation_id: conversationId },
+    });
+  }
+  
+  return Response.json({ ok: true });
+}
+```
+
+---
+
+### Module 6: Post-Call Transcript Analysis
+
+**Inngest Function**: `analyze-call-transcript`
+
+After each completed call, DeepSeek analyzes the transcript via OpenRouter.
+
+**Analysis prompt** (extracted from the actual n8n workflows):
+
+```
+You will receive a conversation transcript between a user and an AI agent.
+Analyse very carefully and extract the following fields and return ONLY a 
+valid JSON object:
+
+{
+  "rating": integer (1 to 5),
+  "summary": string,
+  "email": string or null,
+  "user_name": string or null,
+  "booking_status": "TRUE" or "FALSE",
+  "estimated_cost": number
+}
+
+Rating scale:
+1 = Poor: Did not understand or help, not answering
+2 = Not interested
+3 = Average: Somewhat helpful but with gaps
+4 = Interested but did not book a meeting
+5 = Excellent: Handled the call smoothly, followed intent clearly
+
+Extract email if user provided one. Email should be valid format or null.
+```
+
+**Inngest function**:
+
+```typescript
+inngest.createFunction(
+  { id: 'analyze-call-transcript', retries: 2 },
+  { event: 'call/analyze-transcript' },
+  async ({ event, step }) => {
+    const { conversationId, transcriptText, recordingUrl } = event.data;
+    
+    const analysis = await step.run('llm-analysis', async () => {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL,
+        },
+        body: JSON.stringify({
+          model: 'deepseek/deepseek-chat',
+          messages: [{
+            role: 'user',
+            content: `${ANALYSIS_PROMPT}\n\nTranscript:\n${transcriptText}`,
+          }],
+          temperature: 0,
+        }),
+      });
+      const data = await response.json();
+      return data.choices[0].message.content;
+    });
+    
+    const cleaned = await step.run('clean-analysis', async () => {
+      try {
+        let parsed = JSON.parse(analysis.replace(/```json|```/g, '').trim());
+        
+        // Validate email
+        if (parsed.email) {
+          const email = parsed.email.toLowerCase().trim();
+          parsed.email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+        }
+        
+        // Clamp rating 1-5
+        parsed.rating = Math.max(1, Math.min(5, parseInt(parsed.rating) || 1));
+        
+        // Normalize booking_status
+        parsed.booking_status = ['TRUE', 'FALSE'].includes(
+          String(parsed.booking_status).toUpperCase()
+        ) ? String(parsed.booking_status).toUpperCase() : 'FALSE';
+        
+        // Clean estimated_cost
+        if (parsed.estimated_cost != null) {
+          parsed.estimated_cost = Math.round(Number(parsed.estimated_cost) * 100) / 100;
+          if (isNaN(parsed.estimated_cost)) parsed.estimated_cost = null;
+        }
+        
+        return parsed;
+      } catch {
+        return {
+          rating: 1, summary: 'Error parsing AI response',
+          email: null, user_name: null, booking_status: 'FALSE',
+          estimated_cost: null,
+        };
+      }
+    });
+    
+    await step.run('store-analysis', async () => {
+      await db.query(
+        `UPDATE calls SET 
+          rating=$1, summary=$2, email=$3, name=$4,
+          booking_status=$5, estimated_cost=$6,
+          transcript=$7, recording_url=$8
+         WHERE conversation_id=$9`,
+        [cleaned.rating, cleaned.summary, cleaned.email, cleaned.user_name,
+         cleaned.booking_status, cleaned.estimated_cost,
+         transcriptText, recordingUrl, conversationId]
+      );
+    });
+  }
+);
+```
+
+---
+
+### Module 7: Agent Dashboard
+
+**Who uses it**: Agents (each sees only their own data)
+
+**Pages**:
+```
+/dashboard                — home: list of call lists + summary stats
+/dashboard/upload         — upload Excel template
+/dashboard/lists/[id]     — view call list with entries, statuses, and analysis
+```
+
+**Features**:
+- Download template button
+- Upload Excel file (drag-and-drop), with client-side pre-validation
+- See validation results (errors with row numbers)
+- View extracted contact list before calling
+- "Start" / "Pause" / "Cancel" buttons
+- Real-time-ish status updates (poll `GET /api/call-lists/[id]` every 3-5 seconds during execution)
+- Per-call data: rating (1-5 stars), summary, booking status, user name, email, recording link, duration, cost
+- Filter entries by status: answered, no_answer, busy, failed, pending
+- Aggregate stats per list: total, answered, average rating, appointments booked, total cost
+
+---
+
+### Module 8: Master Dashboard (Agency Head)
+
+**Who uses it**: Admin role only
+
+**Pages**:
+```
+/admin                    — master dashboard
+/admin/agents/[id]        — drill into a specific agent
+```
+
+**Features**:
+- Table of all agents: name, active/inactive, payment status, total lists uploaded, total calls, success rate, average rating, appointments booked, last active date
+- Click into any agent to see their call lists and performance
+- Billing management: mark paid/unpaid, set billing periods, add notes
+- Agent management: create/deactivate agents
+- "Hot leads" view: calls with rating 4-5 and booking_status=TRUE across all agents
+- Upload quality metrics: validation pass rate per agent
+
+**Routes**:
+```
+GET    /api/admin/agents             — all agents with aggregated stats
+GET    /api/admin/agents/[id]        — single agent detail
+PATCH  /api/admin/billing/[agentId]  — update billing status
+GET    /api/admin/stats              — platform-wide aggregates
+```
+
+---
+
+### Module 9: IT Admin Credential Panel
+
+**Who uses it**: IT admin role
+
+**Prerequisites**: The agent must have completed their ElevenLabs setup first (see Section 3: Agent Onboarding). The agent provides their voice sample and cold-calling script directly in the ElevenLabs dashboard — our platform does not manage these. The IT admin only enters the resulting IDs and keys.
+
+**Pages**:
+```
+/it-admin                                — list all agents + credential status
+/it-admin/agents/[id]/credentials        — credential form
+```
+
+**Features**:
+- List of all agents with credential status: configured / not configured / test failed
+- Onboarding checklist per agent showing what's still needed
+- Conditional credential form (see Module 2 above) — adapts fields based on Twilio vs DIDWW
+- "Test Connection" button per service
+- Guidance text explaining what each field is and where to find it in ElevenLabs (see the table in Section 3 under "What the Agent Hands to the IT Admin")
+- On successful save, optionally auto-configure the ElevenLabs webhook URL to point to our backend
+
+---
+
+## 8. Inngest Event Definitions
+
+```typescript
+type Events = {
+  'calllist/start': {
+    data: { callListId: string; agentId: string };
+  };
+  'elevenlabs/call-completed': {
+    data: { conversation_id: string };
+  };
+  'call/analyze-transcript': {
+    data: {
+      conversationId: string;
+      transcriptText: string;
+      callDurationSecs: number;
+      cost: number;
+      recordingUrl: string;
+    };
+  };
+};
+```
+
+---
+
+## 9. File Structure
+
+```
+/
+├── app/
+│   ├── layout.tsx
+│   ├── page.tsx                              — landing / login redirect
+│   │
+│   ├── dashboard/                            — AGENT pages
+│   │   ├── page.tsx                          — call lists overview
+│   │   ├── upload/page.tsx                   — upload Excel
+│   │   └── lists/[id]/page.tsx               — call list detail
+│   │
+│   ├── admin/                                — AGENCY HEAD pages
+│   │   ├── page.tsx                          — master dashboard
+│   │   └── agents/[id]/page.tsx              — agent detail
+│   │
+│   ├── it-admin/                             — IT ADMIN pages
+│   │   ├── page.tsx                          — credential overview
+│   │   └── agents/[id]/credentials/page.tsx  — credential form
+│   │
+│   └── api/
+│       ├── auth/[...nextauth]/route.ts
+│       ├── users/route.ts
+│       ├── users/[id]/route.ts
+│       ├── credentials/[agentId]/route.ts
+│       ├── credentials/[agentId]/test/route.ts
+│       ├── template/download/route.ts
+│       ├── call-lists/upload/route.ts
+│       ├── call-lists/route.ts
+│       ├── call-lists/[id]/route.ts
+│       ├── call-lists/[id]/start/route.ts
+│       ├── call-lists/[id]/pause/route.ts
+│       ├── call-lists/[id]/resume/route.ts
+│       ├── call-lists/[id]/cancel/route.ts
+│       ├── webhooks/elevenlabs/route.ts
+│       ├── admin/agents/route.ts
+│       ├── admin/agents/[id]/route.ts
+│       ├── admin/billing/[agentId]/route.ts
+│       ├── admin/stats/route.ts
+│       └── inngest/route.ts                  — Inngest serve endpoint
+│
+├── lib/
+│   ├── db.ts                                 — NeonDB connection
+│   ├── auth.ts                               — NextAuth config
+│   ├── encryption.ts                         — encrypt/decrypt credentials
+│   ├── elevenlabs.ts                         — initiateOutboundCall() (dual provider)
+│   ├── validators.ts                         — phone normalization, row validation
+│   ├── excel-parser.ts                       — SheetJS-based template reader
+│   └── inngest/
+│       ├── client.ts                         — Inngest client init
+│       ├── execute-calls.ts                  — call loop function
+│       └── analyze-transcript.ts             — post-call analysis function
+│
+├── components/
+│   ├── CallListTable.tsx
+│   ├── CallEntryRow.tsx
+│   ├── CallAnalysisCard.tsx                  — rating, summary, booking badge
+│   ├── AgentStatsCard.tsx
+│   ├── FileUploader.tsx                      — drag-drop with client-side validation
+│   ├── CredentialForm.tsx                    — conditional Twilio/DIDWW fields
+│   ├── BillingStatusBadge.tsx
+│   └── ...
+│
+├── public/
+│   └── coldcall_upload_template.xlsx         — downloadable template
+│
+├── middleware.ts                              — role-based route protection
+├── schema.sql                                — all SQL from Section 4
+└── package.json
+```
+
+---
+
+## 10. Environment Variables
+
+```bash
+# NeonDB
+DATABASE_URL=postgresql://user:pass@ep-xyz.us-east-2.aws.neon.tech/dbname?sslmode=require
+
+# NextAuth
+NEXTAUTH_URL=https://yourdomain.com
+NEXTAUTH_SECRET=<random-32-char-string>
+
+# OpenRouter (for post-call transcript analysis via DeepSeek)
+OPENROUTER_API_KEY=sk-or-...
+
+# Encryption key for agent credentials
+CREDENTIALS_ENCRYPTION_KEY=<aes-256-key-base64>
+
+# Inngest
+INNGEST_EVENT_KEY=<inngest-event-key>
+INNGEST_SIGNING_KEY=<inngest-signing-key>
+
+# App
+NEXT_PUBLIC_APP_URL=https://yourdomain.com
+```
+
+Note: Individual agent ElevenLabs/Twilio/DIDWW credentials are stored encrypted in the database, NOT in environment variables. Only platform-level keys go in env vars.
+
+---
+
+## 11. Security Considerations
+
+- All agent credentials encrypted at rest with AES-256-GCM
+- ElevenLabs webhook verification (if webhook secret is configured)
+- Rate limiting on upload endpoint
+- File type validation on upload (only .xlsx)
+- Max file size limit (10MB)
+- SQL injection prevention via parameterized queries
+- CORS locked to your domain
+- Role-based access enforced in middleware AND in route handlers (defense in depth)
+- Credential GET endpoints return masked values only
+- Rotate any API keys that were hardcoded in the old n8n workflow JSON files
+
+---
+
+## 12. Key Dependencies
+
+```json
+{
+  "dependencies": {
+    "next": "^14",
+    "react": "^18",
+    "@neondatabase/serverless": "latest",
+    "next-auth": "^4",
+    "inngest": "latest",
+    "xlsx": "latest",
+    "tailwindcss": "^3",
+    "lucide-react": "latest"
+  }
+}
+```
+
+Recommended additions:
+- `drizzle-orm` + `drizzle-kit` — type-safe SQL with migrations
+- `zod` — runtime validation for API inputs
+- `@shadcn/ui` — UI components
+
+---
+
+## 13. Deployment (Fresh Start)
+
+This is a greenfield build — there is no data to migrate from the previous Supabase/n8n/Netlify/Hostinger setup. The old stack will be decommissioned separately.
+
+1. Provision a NeonDB database, run `schema.sql` to create all tables
+2. Deploy Next.js app to Vercel
+3. Configure all environment variables in Vercel dashboard
+4. Set up Inngest project and connect to Vercel
+5. Configure ElevenLabs webhook URLs for each agent to point to `https://yourdomain.com/api/webhooks/elevenlabs`
+6. Point DNS to Vercel
+7. Verify end-to-end: upload template → validate → start calls → receive webhooks → see analysis on dashboard
+
+---
+
+## 14. Build Order (Recommended)
+
+Build and test in this order:
+
+1. **Schema + DB connection** — run schema.sql against NeonDB, verify connectivity
+2. **Auth + middleware** — NextAuth with role-based routing
+3. **Credential management** — IT admin can enter + test agent keys (both Twilio and DIDWW paths)
+4. **Excel upload + validation** — template download + synchronous validation
+5. **Agent dashboard** — see uploaded lists and validated results
+6. **Call execution engine** — Inngest function with `initiateOutboundCall()` and `waitForEvent`
+7. **ElevenLabs webhook handler** — receives post-call data, triggers analysis
+8. **Post-call transcript analysis** — DeepSeek via OpenRouter, store results
+9. **Dashboard enrichment** — show ratings, summaries, booking status, transcripts, recording links
+10. **Master dashboard** — admin view of all agents, hot leads, aggregate stats
+11. **Billing management** — payment tracking
+12. **Upload quality metrics** — validation pass rates per agent
