@@ -20,13 +20,26 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Users,
   Phone,
   PhoneIncoming,
   Star,
   Calendar,
   FileCheck,
+  UserPlus,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface PlatformStats {
   totalAgents: number;
@@ -68,24 +81,154 @@ export default function AdminPage() {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({ email: "", name: "", password: "" });
+  const [creating, setCreating] = useState(false);
+  const [emailResult, setEmailResult] = useState<{
+    sent: boolean;
+    error: string | null;
+  } | null>(null);
 
-  useEffect(() => {
+  function fetchData() {
     Promise.all([
       fetch("/api/admin/stats").then((r) => r.json()),
       fetch("/api/admin/agents").then((r) => r.json()),
-    ])
-      .then(([statsData, agentsData]) => {
-        setStats(statsData.data);
-        setAgents(agentsData.data || []);
-      })
-      .finally(() => setLoading(false));
+    ]).then(([statsData, agentsData]) => {
+      setStats(statsData.data);
+      setAgents(agentsData.data || []);
+    });
+  }
+
+  useEffect(() => {
+    fetchData();
+    setLoading(false);
   }, []);
+
+  async function handleCreateAgent(e: React.FormEvent) {
+    e.preventDefault();
+    setCreating(true);
+    setEmailResult(null);
+
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, role: "agent" }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        toast.success(`Agent "${form.name}" created`);
+        setEmailResult({
+          sent: data.data.emailSent,
+          error: data.data.emailError,
+        });
+        setForm({ email: "", name: "", password: "" });
+        fetchData();
+        if (data.data.emailSent) {
+          setTimeout(() => {
+            setDialogOpen(false);
+            setEmailResult(null);
+          }, 3000);
+        }
+      } else {
+        toast.error(data.error || "Failed to create agent");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   if (loading) return <p className="text-gray-500">Loading...</p>;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Master Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Master Dashboard</h1>
+        <Dialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (!open) setEmailResult(null);
+          }}
+        >
+          <DialogTrigger>
+            <Button>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Create Agent
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Agent</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreateAgent} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm({ ...form, name: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) =>
+                    setForm({ ...form, email: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Initial Password</Label>
+                <Input
+                  type="text"
+                  value={form.password}
+                  onChange={(e) =>
+                    setForm({ ...form, password: e.target.value })
+                  }
+                  required
+                  minLength={6}
+                  placeholder="Min 6 characters"
+                />
+                <p className="text-xs text-gray-500">
+                  This password will be emailed to the agent.
+                </p>
+              </div>
+
+              {emailResult && (
+                <div
+                  className={`flex items-center gap-2 rounded-md p-3 text-sm ${
+                    emailResult.sent
+                      ? "bg-green-50 text-green-700"
+                      : "bg-yellow-50 text-yellow-700"
+                  }`}
+                >
+                  {emailResult.sent ? (
+                    <CheckCircle className="h-4 w-4" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4" />
+                  )}
+                  {emailResult.sent
+                    ? "Welcome email sent successfully!"
+                    : `Agent created but email failed: ${emailResult.error}. Share the password manually.`}
+                </div>
+              )}
+
+              <Button type="submit" className="w-full" disabled={creating}>
+                {creating ? "Creating..." : "Create Agent & Send Email"}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
 
       {/* Stats cards */}
       {stats && (
