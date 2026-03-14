@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Play, Pause, XCircle, Star, ArrowLeft, Trash2, RefreshCw } from "lucide-react";
+import { Play, Pause, XCircle, Star, ArrowLeft, Trash2, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import type { CallList, CallEntryWithAnalysis } from "@/lib/types";
 import { toast } from "sonner";
@@ -41,6 +41,8 @@ export default function CallListDetailPage({
   const [filter, setFilter] = useState("all");
   const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -111,6 +113,48 @@ export default function CallListDetailPage({
     }
   }
 
+  async function handleReanalyze() {
+    setReanalyzing(true);
+    try {
+      const res = await fetch(`/api/call-lists/${id}/reanalyze`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.data.message);
+        // Poll for results after a delay
+        setTimeout(fetchData, 5000);
+        setTimeout(fetchData, 15000);
+      } else {
+        toast.error(data.error || "Re-analysis failed");
+      }
+    } catch {
+      toast.error("Re-analysis failed");
+    } finally {
+      setReanalyzing(false);
+    }
+  }
+
+  async function handleRetry() {
+    setRetrying(true);
+    try {
+      const res = await fetch(`/api/call-lists/${id}/retry`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.data.message);
+        fetchData();
+      } else {
+        toast.error(data.error || "Retry failed");
+      }
+    } catch {
+      toast.error("Retry failed");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   async function handleRemoveEntry(entryId: string) {
     try {
       const res = await fetch(`/api/call-lists/${id}/entries/${entryId}`, {
@@ -136,6 +180,17 @@ export default function CallListDetailPage({
 
   const hasStaleEntries = entries.some(
     (e) => e.callStatus === "called" || e.callStatus === "calling"
+  );
+
+  const hasRetryableEntries = entries.some(
+    (e) =>
+      e.callStatus === "no_answer" ||
+      e.callStatus === "busy" ||
+      e.callStatus === "failed"
+  );
+
+  const hasAnsweredWithoutAnalysis = entries.some(
+    (e) => e.callStatus === "answered" && !e.analysis
   );
 
   const filteredEntries =
@@ -205,6 +260,28 @@ export default function CallListDetailPage({
                 className={`mr-1 h-4 w-4 ${syncing ? "animate-spin" : ""}`}
               />
               {syncing ? "Syncing..." : "Sync Calls"}
+            </Button>
+          )}
+          {hasRetryableEntries && list.callStatus !== "in_progress" && (
+            <Button
+              variant="outline"
+              onClick={handleRetry}
+              disabled={retrying}
+            >
+              <RotateCcw className="mr-1 h-4 w-4" />
+              {retrying ? "Resetting..." : "Retry Failed"}
+            </Button>
+          )}
+          {hasAnsweredWithoutAnalysis && list.callStatus !== "in_progress" && (
+            <Button
+              variant="outline"
+              onClick={handleReanalyze}
+              disabled={reanalyzing}
+            >
+              <Sparkles
+                className={`mr-1 h-4 w-4 ${reanalyzing ? "animate-pulse" : ""}`}
+              />
+              {reanalyzing ? "Analyzing..." : "Re-analyze"}
             </Button>
           )}
         </div>
