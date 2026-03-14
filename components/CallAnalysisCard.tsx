@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Star, Mail, User, Calendar, Clock, DollarSign, MapPin } from "lucide-react";
+import { Star, Mail, User, Calendar, Clock, MapPin } from "lucide-react";
 
 interface AnalysisData {
   rating: number | null;
@@ -120,8 +120,7 @@ export function CallAnalysisCard({ analysis }: { analysis: AnalysisData }) {
           )}
           {analysis.callCost && (
             <div className="flex items-center gap-1 text-gray-500">
-              <DollarSign className="h-3 w-3" />
-              <span>${analysis.callCost}</span>
+              <span>{Math.round(Number(analysis.callCost))} credits</span>
             </div>
           )}
         </div>
