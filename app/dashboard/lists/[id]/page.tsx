@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Play, Pause, XCircle, Star, ArrowLeft, Trash2 } from "lucide-react";
+import { Play, Pause, XCircle, Star, ArrowLeft, Trash2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { CallList, CallEntryWithAnalysis } from "@/lib/types";
 import { toast } from "sonner";
@@ -40,6 +40,7 @@ export default function CallListDetailPage({
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -90,6 +91,26 @@ export default function CallListDetailPage({
     }
   }
 
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/call-lists/${id}/sync`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.data.message);
+        fetchData();
+      } else {
+        toast.error(data.error || "Sync failed");
+      }
+    } catch {
+      toast.error("Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function handleRemoveEntry(entryId: string) {
     try {
       const res = await fetch(`/api/call-lists/${id}/entries/${entryId}`, {
@@ -112,6 +133,10 @@ export default function CallListDetailPage({
     list?.callStatus === "paused" ||
     list?.callStatus === "completed" ||
     list?.callStatus === "cancelled";
+
+  const hasStaleEntries = entries.some(
+    (e) => e.callStatus === "called" || e.callStatus === "calling"
+  );
 
   const filteredEntries =
     filter === "all"
@@ -168,6 +193,18 @@ export default function CallListDetailPage({
               onClick={() => handleAction("cancel")}
             >
               <XCircle className="mr-1 h-4 w-4" /> Cancel
+            </Button>
+          )}
+          {hasStaleEntries && list.callStatus !== "in_progress" && (
+            <Button
+              variant="outline"
+              onClick={handleSync}
+              disabled={syncing}
+            >
+              <RefreshCw
+                className={`mr-1 h-4 w-4 ${syncing ? "animate-spin" : ""}`}
+              />
+              {syncing ? "Syncing..." : "Sync Calls"}
             </Button>
           )}
         </div>
