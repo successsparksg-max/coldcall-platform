@@ -13,7 +13,7 @@ export const analyzeCallTranscript = inngest.createFunction(
     const { conversationId, transcriptText, recordingUrl } = event.data;
 
     const analysis = await step.run("llm-analysis", async () => {
-      const model = process.env.AI_MODEL || "deepseek/deepseek-v3.2";
+      const model = process.env.AI_MODEL || "deepseek/deepseek-chat";
       const { text } = await generateText({
         model: gateway(model),
         prompt: `${ANALYSIS_PROMPT}\n\nTranscript:\n${transcriptText}`,
@@ -56,7 +56,6 @@ export const analyzeCallTranscript = inngest.createFunction(
           if (isNaN(parsed.estimated_cost)) parsed.estimated_cost = null;
         }
 
-        return parsed;
         // Clean booking fields
         parsed.booking_location = parsed.booking_location
           ? String(parsed.booking_location).trim()
