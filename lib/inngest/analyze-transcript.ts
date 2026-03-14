@@ -4,7 +4,6 @@ import { calls } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { ANALYSIS_PROMPT } from "@/lib/analysis-prompt";
 import { generateText } from "ai";
-import { gateway } from "@/lib/gateway";
 
 export const analyzeCallTranscript = inngest.createFunction(
   { id: "analyze-call-transcript", retries: 2 },
@@ -13,9 +12,8 @@ export const analyzeCallTranscript = inngest.createFunction(
     const { conversationId, transcriptText, recordingUrl } = event.data;
 
     const analysis = await step.run("llm-analysis", async () => {
-      const model = process.env.AI_MODEL || "deepseek/deepseek-v3.2";
       const { text } = await generateText({
-        model: gateway(model),
+        model: process.env.AI_MODEL || "deepseek/deepseek-v3.2",
         prompt: `${ANALYSIS_PROMPT}\n\nTranscript:\n${transcriptText}`,
         temperature: 0,
       });
