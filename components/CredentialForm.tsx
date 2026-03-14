@@ -11,7 +11,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { CheckCircle, XCircle, Loader2, Save } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, Save, Copy, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 interface CredentialFormProps {
@@ -160,15 +160,50 @@ export function CredentialForm({
           </div>
 
           <div className="space-y-2">
-            <Label>Webhook Secret (optional)</Label>
-            <Input
-              type="password"
-              placeholder="For verifying incoming webhooks"
-              value={form.elevenlabsWebhookSecret}
-              onChange={(e) =>
-                updateField("elevenlabsWebhookSecret", e.target.value)
-              }
-            />
+            <Label>Post-Call Webhook HMAC Secret *</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Click Generate to create a secret"
+                value={form.elevenlabsWebhookSecret}
+                onChange={(e) =>
+                  updateField("elevenlabsWebhookSecret", e.target.value)
+                }
+                className="font-mono text-sm"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+                  let secret = "";
+                  for (let i = 0; i < 32; i++) {
+                    secret += chars.charAt(Math.floor(Math.random() * chars.length));
+                  }
+                  updateField("elevenlabsWebhookSecret", secret);
+                }}
+              >
+                <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                Generate
+              </Button>
+              {form.elevenlabsWebhookSecret && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(form.elevenlabsWebhookSecret);
+                    toast.success("Secret copied to clipboard");
+                  }}
+                >
+                  <Copy className="mr-1 h-3.5 w-3.5" />
+                  Copy
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">
+              Generate a secret here, then copy it into ElevenLabs when creating the Post-Call Webhook (Settings → Post-Call Webhook → Create Webhook → Auth Method: HMAC).
+            </p>
           </div>
 
           {/* Telephony Provider */}

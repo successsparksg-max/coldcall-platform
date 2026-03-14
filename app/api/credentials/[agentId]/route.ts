@@ -136,6 +136,10 @@ export async function PUT(
       const appUrl = process.env.NEXT_PUBLIC_APP_URL;
       if (appUrl) {
         const webhookUrl = `${appUrl}/api/webhooks/elevenlabs`;
+        const webhookConfig: Record<string, string> = { url: webhookUrl };
+        if (data.elevenlabsWebhookSecret) {
+          webhookConfig.secret = data.elevenlabsWebhookSecret;
+        }
         const res = await fetch(
           `https://api.elevenlabs.io/v1/convai/agents/${data.elevenlabsAgentId}`,
           {
@@ -146,7 +150,7 @@ export async function PUT(
             },
             body: JSON.stringify({
               platform_settings: {
-                webhook: { url: webhookUrl },
+                webhook: webhookConfig,
               },
             }),
           }

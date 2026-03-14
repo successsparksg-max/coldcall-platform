@@ -1,17 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { callEntries, calls, callLists } from "@/lib/schema";
+import { callEntries, calls, callLists, agentCredentials } from "@/lib/schema";
 import { inngest } from "@/lib/inngest/client";
+import { decrypt } from "@/lib/encryption";
 import { eq, sql } from "drizzle-orm";
+import crypto from "crypto";
+
+async function verifyWebhookSignature(
+  body: string,
+  signature: string | null,
+  agentId: string
+): Promise<boolean> {
+  if (!signature) return true; // No signature header = skip verification
+
+  try {
+    const [cred] = await db
+      .select({ elevenlabsWebhookSecret: agentCredentials.elevenlabsWebhookSecret })
+      .from(agentCredentials)
+      .where(eq(agentCredentials.elevenlabsAgentId, agentId))
+      .limit(1);
+
+    if (!cred?.elevenlabsWebhookSecret) return true; // No secret configured = skip
+
+    const secret = decrypt(cred.elevenlabsWebhookSecret);
+    const expected = crypto
+      .createHmac("sha256", secret)
+      .update(body)
+      .digest("hex");
+
+    return crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expected)
+    );
+  } catch {
+    console.error("[webhook] Signature verification error");
+    return true; // Don't block webhooks if verification fails
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const payload = await req.json();
+    const rawBody = await req.text();
+    const payload = JSON.parse(rawBody);
     const data = payload.data || payload.body?.data;
     if (!data) return NextResponse.json({ ok: true });
 
     const conversationId = data.conversation_id;
     const status = data.status;
+
+    // Verify HMAC signature if present
+    const signature =
+      req.headers.get("x-elevenlabs-signature") ||
+      req.headers.get("x-signature");
+    if (data.agent_id && signature) {
+      const valid = await verifyWebhookSignature(rawBody, signature, data.agent_id);
+      if (!valid) {
+        console.error("[webhook] Invalid signature for conversation:", conversationId);
+        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      }
+    }
 
     if (!conversationId) return NextResponse.json({ ok: true });
 
