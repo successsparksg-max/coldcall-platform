@@ -199,6 +199,9 @@ export const calls = pgTable(
     email: text("email"),
     name: text("name"),
     bookingStatus: text("booking_status", { enum: ["TRUE", "FALSE"] }),
+    bookingLocation: text("booking_location"),
+    bookingDate: text("booking_date"),
+    bookingTime: text("booking_time"),
     estimatedCost: decimal("estimated_cost", { precision: 10, scale: 2 }),
     callType: text("call_type"),
 

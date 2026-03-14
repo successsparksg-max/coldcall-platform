@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Star, Mail, User, Calendar, Clock, DollarSign } from "lucide-react";
+import { Star, Mail, User, Calendar, Clock, DollarSign, MapPin } from "lucide-react";
 
 interface AnalysisData {
   rating: number | null;
@@ -8,6 +8,9 @@ interface AnalysisData {
   email: string | null;
   name: string | null;
   bookingStatus: string | null;
+  bookingLocation: string | null;
+  bookingDate: string | null;
+  bookingTime: string | null;
   estimatedCost: string | null;
   transcript: string | null;
   recordingUrl: string | null;
@@ -43,20 +46,45 @@ export function CallAnalysisCard({ analysis }: { analysis: AnalysisData }) {
 
         {/* Booking Status */}
         {analysis.bookingStatus && (
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-gray-400" />
-            <Badge
-              variant={
-                analysis.bookingStatus === "TRUE" ? "default" : "secondary"
-              }
-              className={
-                analysis.bookingStatus === "TRUE"
-                  ? "bg-green-100 text-green-700"
-                  : ""
-              }
-            >
-              {analysis.bookingStatus === "TRUE" ? "Booked" : "Not Booked"}
-            </Badge>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-gray-400" />
+              <Badge
+                variant={
+                  analysis.bookingStatus === "TRUE" ? "default" : "secondary"
+                }
+                className={
+                  analysis.bookingStatus === "TRUE"
+                    ? "bg-green-100 text-green-700"
+                    : ""
+                }
+              >
+                {analysis.bookingStatus === "TRUE" ? "Booked" : "Not Booked"}
+              </Badge>
+            </div>
+            {analysis.bookingStatus === "TRUE" &&
+              (analysis.bookingLocation ||
+                analysis.bookingDate ||
+                analysis.bookingTime) && (
+                <div className="ml-6 space-y-0.5 text-gray-600">
+                  {analysis.bookingLocation && (
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 text-gray-400" />
+                      <span>{analysis.bookingLocation}</span>
+                    </div>
+                  )}
+                  {(analysis.bookingDate || analysis.bookingTime) && (
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-gray-400" />
+                      <span>
+                        {[analysis.bookingDate, analysis.bookingTime]
+                          .filter(Boolean)
+                          .join(" at ")}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
           </div>
         )}
 

@@ -57,6 +57,18 @@ export const analyzeCallTranscript = inngest.createFunction(
         }
 
         return parsed;
+        // Clean booking fields
+        parsed.booking_location = parsed.booking_location
+          ? String(parsed.booking_location).trim()
+          : null;
+        parsed.booking_date = parsed.booking_date
+          ? String(parsed.booking_date).trim()
+          : null;
+        parsed.booking_time = parsed.booking_time
+          ? String(parsed.booking_time).trim()
+          : null;
+
+        return parsed;
       } catch {
         return {
           rating: 1,
@@ -64,6 +76,9 @@ export const analyzeCallTranscript = inngest.createFunction(
           email: null,
           user_name: null,
           booking_status: "FALSE",
+          booking_location: null,
+          booking_date: null,
+          booking_time: null,
           estimated_cost: null,
         };
       }
@@ -78,6 +93,9 @@ export const analyzeCallTranscript = inngest.createFunction(
           email: cleaned.email,
           name: cleaned.user_name,
           bookingStatus: cleaned.booking_status,
+          bookingLocation: cleaned.booking_location,
+          bookingDate: cleaned.booking_date,
+          bookingTime: cleaned.booking_time,
           estimatedCost: cleaned.estimated_cost?.toString() || null,
           transcript: transcriptText,
           recordingUrl: recordingUrl,

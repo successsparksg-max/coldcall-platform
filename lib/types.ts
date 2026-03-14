@@ -66,6 +66,9 @@ export interface CallEntryWithAnalysis extends CallEntry {
     email: string | null;
     name: string | null;
     bookingStatus: string | null;
+    bookingLocation: string | null;
+    bookingDate: string | null;
+    bookingTime: string | null;
     estimatedCost: string | null;
     transcript: string | null;
     recordingUrl: string | null;
