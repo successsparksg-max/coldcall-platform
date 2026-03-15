@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { callLists, callEntries } from "@/lib/schema";
+import { callLists, callEntries, calls } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
 import { eq, and, inArray, sql } from "drizzle-orm";
@@ -49,7 +49,13 @@ export async function POST(
       });
     }
 
-    // Reset entries to pending
+    // Delete old calls records for these entries so we don't get duplicate rows
+    const entryIds = retryEntries.map((e) => e.id);
+    await db
+      .delete(calls)
+      .where(inArray(calls.callEntryId, entryIds));
+
+    // Reset entries to pending and increment call attempts
     await db
       .update(callEntries)
       .set({
@@ -59,6 +65,7 @@ export async function POST(
         callDurationSeconds: null,
         callStartedAt: null,
         callEndedAt: null,
+        callAttempts: sql`${callEntries.callAttempts} + 1`,
         updatedAt: new Date(),
       })
       .where(

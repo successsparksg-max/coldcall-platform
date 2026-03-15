@@ -51,7 +51,24 @@ export async function GET(
       .where(eq(callEntries.callListId, id))
       .orderBy(asc(callEntries.sortOrder));
 
-    const enrichedEntries = entries.map((e) => ({
+    // Deduplicate: if an entry has multiple calls records (from retries),
+    // keep the one with analysis data, or the last one
+    const entryMap = new Map<string, typeof entries[0]>();
+    for (const e of entries) {
+      const existing = entryMap.get(e.entry.id);
+      if (!existing) {
+        entryMap.set(e.entry.id, e);
+      } else {
+        // Prefer the row that has analysis data
+        const hasAnalysis = e.analysis?.rating !== null || e.analysis?.summary !== null;
+        const existingHasAnalysis = existing.analysis?.rating !== null || existing.analysis?.summary !== null;
+        if (hasAnalysis && !existingHasAnalysis) {
+          entryMap.set(e.entry.id, e);
+        }
+      }
+    }
+
+    const enrichedEntries = Array.from(entryMap.values()).map((e) => ({
       ...e.entry,
       analysis: e.analysis?.rating !== null || e.analysis?.summary !== null
         ? e.analysis

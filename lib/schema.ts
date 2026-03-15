@@ -161,6 +161,7 @@ export const callEntries = pgTable(
     callStartedAt: timestamp("call_started_at", { withTimezone: true }),
     callEndedAt: timestamp("call_ended_at", { withTimezone: true }),
 
+    callAttempts: integer("call_attempts").notNull().default(0),
     sortOrder: integer("sort_order").notNull().default(0),
 
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),

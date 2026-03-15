@@ -350,6 +350,7 @@ export default function CallListDetailPage({
             <TableHead>Contact</TableHead>
             <TableHead>Phone</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Attempts</TableHead>
             <TableHead>Rating</TableHead>
             <TableHead>Booking</TableHead>
             <TableHead></TableHead>
@@ -381,6 +382,9 @@ export default function CallListDetailPage({
                 </TableCell>
                 <TableCell>
                   <StatusBadge status={entry.callStatus} />
+                </TableCell>
+                <TableCell className="text-center">
+                  {(entry.callAttempts || 0) + 1}
                 </TableCell>
                 <TableCell>
                   {entry.analysis?.rating && (
@@ -422,7 +426,7 @@ export default function CallListDetailPage({
               </TableRow>
               {expandedEntry === entry.id && entry.analysis && (
                 <TableRow key={`${entry.id}-analysis`}>
-                  <TableCell colSpan={7} className="bg-gray-50 p-4">
+                  <TableCell colSpan={8} className="bg-gray-50 p-4">
                     <CallAnalysisCard analysis={entry.analysis} />
                   </TableCell>
                 </TableRow>
