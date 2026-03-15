@@ -13,7 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Play, Pause, XCircle, Star, ArrowLeft, Trash2, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
+import { Play, Pause, XCircle, Star, ArrowLeft, Trash2, RefreshCw, RotateCcw, Sparkles, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 import Link from "next/link";
 import type { CallList, CallEntryWithAnalysis } from "@/lib/types";
 import { toast } from "sonner";
@@ -172,6 +173,46 @@ export default function CallListDetailPage({
     }
   }
 
+  function handleDownload() {
+    const rows = entries.map((e) => ({
+      "#": e.sortOrder + 1,
+      "Contact Name": e.contactName,
+      "Company": e.company || "",
+      "Phone Number": e.phoneNumber,
+      "Status": e.callStatus.replace("_", " "),
+      "Attempts": (e.callAttempts || 0) + 1,
+      "Rating": e.analysis?.rating ?? "",
+      "Summary": e.analysis?.summary || "",
+      "Booking Status": e.analysis?.bookingStatus === "TRUE" ? "Booked" : e.analysis?.bookingStatus === "FALSE" ? "Not Booked" : "",
+      "Booking Location": e.analysis?.bookingLocation || "",
+      "Booking Date": e.analysis?.bookingDate || "",
+      "Booking Time": e.analysis?.bookingTime || "",
+      "Contact Email": e.analysis?.email || "",
+      "Contact Name (from call)": e.analysis?.name || "",
+      "Duration (s)": e.analysis?.duration ?? "",
+      "Cost (credits)": e.analysis?.callCost ? Math.round(Number(e.analysis.callCost)) : "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // Auto-size columns
+    const colWidths = Object.keys(rows[0] || {}).map((key) => {
+      const maxLen = Math.max(
+        key.length,
+        ...rows.map((r) => String(r[key as keyof typeof r] ?? "").length)
+      );
+      return { wch: Math.min(maxLen + 2, 50) };
+    });
+    ws["!cols"] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Call Results");
+    const filename = (list?.originalFilename || "call-list")
+      .replace(/\.xlsx?$/i, "")
+      + "_results.xlsx";
+    XLSX.writeFile(wb, filename);
+  }
+
   const canRemoveEntries =
     list?.callStatus === "ready" ||
     list?.callStatus === "paused" ||
@@ -248,6 +289,14 @@ export default function CallListDetailPage({
               onClick={() => handleAction("cancel")}
             >
               <XCircle className="mr-1 h-4 w-4" /> Cancel
+            </Button>
+          )}
+          {entries.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={handleDownload}
+            >
+              <Download className="mr-1 h-4 w-4" /> Download
             </Button>
           )}
           {hasStaleEntries && list.callStatus !== "in_progress" && (
