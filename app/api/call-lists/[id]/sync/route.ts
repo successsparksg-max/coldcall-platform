@@ -103,7 +103,7 @@ export async function POST(
         const cost = conv.metadata?.cost || conv.call_cost || 0;
 
         // Determine call status
-        let newEntryStatus: string;
+        let newEntryStatus: "answered" | "no_answer" | "failed";
         if (status === "done") {
           newEntryStatus = "answered";
         } else {
