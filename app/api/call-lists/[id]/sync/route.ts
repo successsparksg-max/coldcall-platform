@@ -103,7 +103,23 @@ export async function POST(
         const cost = conv.metadata?.cost || conv.call_cost || 0;
 
         // Determine call status
-        const newEntryStatus = status === "done" ? "answered" : "failed";
+        let newEntryStatus: string;
+        if (status === "done") {
+          newEntryStatus = "answered";
+        } else {
+          // Check if it's a no-answer vs actual failure
+          const terminationReason =
+            conv.metadata?.termination_reason ||
+            conv.termination_reason ||
+            conv.status;
+          const isNoAnswer =
+            terminationReason === "no_answer" ||
+            terminationReason === "no-answer" ||
+            status === "no-answer" ||
+            status === "no_answer" ||
+            durationSecs < 5;
+          newEntryStatus = isNoAnswer ? "no_answer" : "failed";
+        }
 
         // Update call_entries
         await db
@@ -130,6 +146,10 @@ export async function POST(
         if (newEntryStatus === "answered") {
           await db.execute(
             `UPDATE call_lists SET calls_answered = calls_answered + 1 WHERE id = '${list.id}'`
+          );
+        } else if (newEntryStatus === "no_answer") {
+          await db.execute(
+            `UPDATE call_lists SET calls_no_answer = calls_no_answer + 1 WHERE id = '${list.id}'`
           );
         } else {
           await db.execute(
