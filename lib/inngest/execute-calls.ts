@@ -106,11 +106,11 @@ export const executeCallList = inngest.createFunction(
           return result;
         });
 
-        // Wait for webhook or timeout
+        // Wait for webhook or timeout (3m safety net — auto-sync catches stragglers)
         await step.waitForEvent(`wait-${entry.id}`, {
           event: "elevenlabs/call-completed",
           match: "data.conversation_id",
-          timeout: "5m",
+          timeout: "3m",
         });
       } catch {
         // Mark entry as failed
@@ -129,8 +129,11 @@ export const executeCallList = inngest.createFunction(
         });
       }
 
-      // Buffer between calls
-      await step.sleep(`buffer-${entry.id}`, "10s");
+      // Random 10-20s buffer between calls
+      const bufferSecs = await step.run(`buffer-calc-${entry.id}`, async () => {
+        return Math.floor(Math.random() * 11) + 10;
+      });
+      await step.sleep(`buffer-${entry.id}`, `${bufferSecs}s`);
     }
 
     // Auto-sync: resolve any entries still stuck as "calling"/"called"
