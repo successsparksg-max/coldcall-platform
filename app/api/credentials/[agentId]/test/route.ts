@@ -112,13 +112,14 @@ export async function POST(
         });
       }
     } else if (cred.telephonyProvider === "didww" && cred.didwwPhoneNumber) {
-      const phoneValid = /^\+\d{7,15}$/.test(cred.didwwPhoneNumber);
+      const numbers = cred.didwwPhoneNumber.split(",").map((n) => n.trim()).filter(Boolean);
+      const allValid = numbers.length > 0 && numbers.every((n) => /^\+\d{7,15}$/.test(n));
       results.push({
         test: "DIDWW Phone Number",
-        status: phoneValid ? "pass" : "fail",
-        message: phoneValid
-          ? "Phone number format valid"
-          : "Invalid phone number format",
+        status: allValid ? "pass" : "fail",
+        message: allValid
+          ? `${numbers.length} phone number(s) valid`
+          : `Invalid phone number format in: ${numbers.filter((n) => !/^\+\d{7,15}$/.test(n)).join(", ")}`,
       });
     }
 
