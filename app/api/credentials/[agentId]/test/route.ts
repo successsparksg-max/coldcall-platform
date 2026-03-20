@@ -86,29 +86,35 @@ export async function POST(
 
     // Test 3: Provider-specific
     if (cred.telephonyProvider === "twilio" && cred.elevenlabsPhoneNumberId) {
-      try {
-        const res = await fetch(
-          `https://api.elevenlabs.io/v1/convai/phone-numbers/${cred.elevenlabsPhoneNumberId}`,
-          { headers: { "xi-api-key": apiKey } }
-        );
-        if (res.ok) {
-          results.push({
-            test: "Twilio Phone Number",
-            status: "pass",
-            message: "Phone number found",
-          });
-        } else {
-          results.push({
-            test: "Twilio Phone Number",
-            status: "fail",
-            message: `Phone number not found (${res.status})`,
-          });
+      const phoneIds = cred.elevenlabsPhoneNumberId.split(",").map((n) => n.trim()).filter(Boolean);
+      const passed: string[] = [];
+      const failed: string[] = [];
+      for (const phoneId of phoneIds) {
+        try {
+          const res = await fetch(
+            `https://api.elevenlabs.io/v1/convai/phone-numbers/${phoneId}`,
+            { headers: { "xi-api-key": apiKey } }
+          );
+          if (res.ok) {
+            passed.push(phoneId);
+          } else {
+            failed.push(`${phoneId} (${res.status})`);
+          }
+        } catch {
+          failed.push(`${phoneId} (connection failed)`);
         }
-      } catch {
+      }
+      if (failed.length === 0) {
         results.push({
-          test: "Twilio Phone Number",
+          test: "Phone Numbers",
+          status: "pass",
+          message: `${passed.length} phone number(s) found`,
+        });
+      } else {
+        results.push({
+          test: "Phone Numbers",
           status: "fail",
-          message: "Connection failed",
+          message: `Not found: ${failed.join(", ")}`,
         });
       }
     } else if (cred.telephonyProvider === "didww" && cred.didwwPhoneNumber) {

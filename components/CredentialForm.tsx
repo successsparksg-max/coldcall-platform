@@ -210,29 +210,29 @@ export function CredentialForm({
           {form.telephonyProvider === "twilio" ? (
             <>
               <div className="space-y-2">
-                <Label>ElevenLabs Phone Number ID *</Label>
+                <Label>ElevenLabs Phone Number ID(s) *</Label>
                 <Input
-                  placeholder="phnum_01jy93n259..."
+                  placeholder="phnum_abc123, phnum_def456"
                   value={form.elevenlabsPhoneNumberId}
                   onChange={(e) =>
                     updateField("elevenlabsPhoneNumberId", e.target.value)
                   }
                 />
                 <p className="text-xs text-gray-500">
-                  Found in ElevenLabs → Phone Numbers
+                  Comma-separated for multiple numbers. Found in ElevenLabs → Phone Numbers (in the URL: phnum_...). The system will rotate through them.
                 </p>
               </div>
               <div className="space-y-2">
-                <Label>Outbound Caller ID *</Label>
+                <Label>Outbound Caller ID(s) *</Label>
                 <Input
-                  placeholder="+6531237476"
+                  placeholder="+6531060237, +6531065066"
                   value={form.outboundCallerId}
                   onChange={(e) =>
                     updateField("outboundCallerId", e.target.value)
                   }
                 />
                 <p className="text-xs text-gray-500">
-                  The number contacts see when called
+                  Comma-separated, matching the order of Phone Number IDs above. The number contacts see when called.
                 </p>
               </div>
             </>

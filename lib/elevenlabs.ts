@@ -16,9 +16,15 @@ export async function initiateOutboundCall(
 
   if (credentials.telephony_provider === "twilio") {
     url = "https://api.elevenlabs.io/v1/convai/twilio/outbound-call";
+    // Support comma-separated phone number IDs — pick one at random
+    const phoneIds = credentials.elevenlabs_phone_number_id!
+      .split(",")
+      .map((n) => n.trim())
+      .filter(Boolean);
+    const selectedId = phoneIds[Math.floor(Math.random() * phoneIds.length)];
     body = {
       agent_id: credentials.elevenlabs_agent_id,
-      agent_phone_number_id: credentials.elevenlabs_phone_number_id!,
+      agent_phone_number_id: selectedId,
       to_number: toNumber,
     };
   } else {
