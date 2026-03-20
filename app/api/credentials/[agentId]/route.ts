@@ -81,9 +81,9 @@ export async function PUT(
         422
       );
     }
-    if (data.telephonyProvider === "didww" && !data.didwwPhoneNumber) {
+    if (data.telephonyProvider === "didww" && !data.didwwPhoneNumber && !data.elevenlabsPhoneNumberId) {
       return apiError(
-        "DIDWW phone number required for DIDWW provider",
+        "Either ElevenLabs Phone Number ID(s) or DIDWW phone number(s) required",
         422
       );
     }

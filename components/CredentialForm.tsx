@@ -237,19 +237,47 @@ export function CredentialForm({
               </div>
             </>
           ) : (
-            <div className="space-y-2">
-              <Label>DIDWW Phone Number(s) *</Label>
-              <Input
-                placeholder="+6531252383, +6531252384"
-                value={form.didwwPhoneNumber}
-                onChange={(e) =>
-                  updateField("didwwPhoneNumber", e.target.value)
-                }
-              />
-              <p className="text-xs text-gray-500">
-                Comma-separated for multiple numbers. Also serves as caller ID. The system will rotate through them. Found in DIDWW dashboard.
-              </p>
-            </div>
+            <>
+              <div className="space-y-2">
+                <Label>ElevenLabs Phone Number ID(s)</Label>
+                <Input
+                  placeholder="phnum_abc123, phnum_def456"
+                  value={form.elevenlabsPhoneNumberId}
+                  onChange={(e) =>
+                    updateField("elevenlabsPhoneNumberId", e.target.value)
+                  }
+                />
+                <p className="text-xs text-gray-500">
+                  If your DIDWW numbers are registered in ElevenLabs, enter their phnum_ IDs here (comma-separated). Found in the URL when viewing the number in ElevenLabs → Phone Numbers.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>DIDWW Phone Number(s)</Label>
+                <Input
+                  placeholder="+6531252383, +6531252384"
+                  value={form.didwwPhoneNumber}
+                  onChange={(e) =>
+                    updateField("didwwPhoneNumber", e.target.value)
+                  }
+                />
+                <p className="text-xs text-gray-500">
+                  Only needed if numbers are NOT registered in ElevenLabs (direct SIP). Comma-separated for multiple.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Outbound Caller ID(s)</Label>
+                <Input
+                  placeholder="+6531060237, +6531065066"
+                  value={form.outboundCallerId}
+                  onChange={(e) =>
+                    updateField("outboundCallerId", e.target.value)
+                  }
+                />
+                <p className="text-xs text-gray-500">
+                  The number(s) contacts see when called. Comma-separated, matching the order above.
+                </p>
+              </div>
+            </>
           )}
 
           <div className="flex gap-3 pt-2">

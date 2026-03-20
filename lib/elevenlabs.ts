@@ -27,9 +27,22 @@ export async function initiateOutboundCall(
       agent_phone_number_id: selectedId,
       to_number: toNumber,
     };
-  } else {
+  } else if (credentials.elevenlabs_phone_number_id) {
+    // DIDWW numbers registered in ElevenLabs with phnum_ IDs
     url = "https://api.elevenlabs.io/v1/convai/outbound-call";
-    // Support comma-separated DIDWW numbers — pick one at random
+    const phoneIds = credentials.elevenlabs_phone_number_id
+      .split(",")
+      .map((n) => n.trim())
+      .filter(Boolean);
+    const selectedId = phoneIds[Math.floor(Math.random() * phoneIds.length)];
+    body = {
+      agent_id: credentials.elevenlabs_agent_id,
+      agent_phone_number_id: selectedId,
+      to_number: toNumber,
+    };
+  } else {
+    // DIDWW direct SIP with raw phone numbers
+    url = "https://api.elevenlabs.io/v1/convai/outbound-call";
     const numbers = credentials.didww_phone_number!
       .split(",")
       .map((n) => n.trim())
