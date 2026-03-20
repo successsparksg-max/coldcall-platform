@@ -28,8 +28,8 @@ export async function initiateOutboundCall(
       to_number: toNumber,
     };
   } else if (credentials.elevenlabs_phone_number_id) {
-    // DIDWW numbers registered in ElevenLabs with phnum_ IDs
-    url = "https://api.elevenlabs.io/v1/convai/outbound-call";
+    // SIP trunk numbers registered in ElevenLabs with phnum_ IDs
+    url = "https://api.elevenlabs.io/v1/convai/sip-trunk/outbound-call";
     const phoneIds = credentials.elevenlabs_phone_number_id
       .split(",")
       .map((n) => n.trim())
@@ -42,7 +42,7 @@ export async function initiateOutboundCall(
     };
   } else {
     // DIDWW direct SIP with raw phone numbers
-    url = "https://api.elevenlabs.io/v1/convai/outbound-call";
+    url = "https://api.elevenlabs.io/v1/convai/sip-trunk/outbound-call";
     const numbers = credentials.didww_phone_number!
       .split(",")
       .map((n) => n.trim())
