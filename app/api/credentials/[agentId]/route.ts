@@ -109,7 +109,7 @@ export async function PUT(
       didwwPhoneNumber: data.didwwPhoneNumber || null,
       outboundCallerId: outboundCallerId || null,
       credentialsComplete: true,
-      updatedBy: user.id,
+      updatedBy: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) ? user.id : null,
       updatedAt: new Date(),
     };
 
