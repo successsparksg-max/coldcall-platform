@@ -38,6 +38,7 @@ import {
   UserPlus,
   CheckCircle,
   AlertCircle,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,6 +58,7 @@ interface PlatformStats {
     summary: string | null;
     bookingStatus: string | null;
     createdAt: string;
+    agentName: string | null;
   }[];
   uploadQuality: { total: number; passed: number; rate: number };
 }
@@ -88,6 +90,9 @@ export default function AdminPage() {
     sent: boolean;
     error: string | null;
   } | null>(null);
+  const [editAgent, setEditAgent] = useState<AgentRow | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", email: "" });
+  const [saving, setSaving] = useState(false);
 
   function fetchData() {
     Promise.all([
@@ -138,6 +143,45 @@ export default function AdminPage() {
       toast.error("Network error");
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function toggleActive(agentId: string, isActive: boolean) {
+    const res = await fetch(`/api/users/${agentId}`, {
+      method: isActive ? "DELETE" : "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: isActive ? undefined : JSON.stringify({ isActive: true }),
+    });
+    if (res.ok) {
+      toast.success(isActive ? "Agent deactivated" : "Agent reactivated");
+      fetchData();
+    } else {
+      toast.error("Failed to update agent status");
+    }
+  }
+
+  async function handleEditAgent(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editAgent) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/users/${editAgent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editForm.name, email: editForm.email }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success("Agent updated");
+        setEditAgent(null);
+        fetchData();
+      } else {
+        toast.error(data.error || "Failed to update agent");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -339,11 +383,30 @@ export default function AdminPage() {
                       : "-"}
                   </TableCell>
                   <TableCell>
-                    <Link href={`/admin/agents/${agent.id}`}>
-                      <Button variant="outline" size="sm">
-                        View
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditAgent(agent);
+                          setEditForm({ name: agent.name, email: agent.email });
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                    </Link>
+                      <Link href={`/admin/agents/${agent.id}`}>
+                        <Button variant="outline" size="sm">
+                          View
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleActive(agent.id, agent.isActive)}
+                      >
+                        {agent.isActive ? "Deactivate" : "Reactivate"}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -365,6 +428,7 @@ export default function AdminPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead>Agent</TableHead>
                   <TableHead>Rating</TableHead>
                   <TableHead>Summary</TableHead>
                   <TableHead>Date</TableHead>
@@ -380,6 +444,7 @@ export default function AdminPage() {
                       {lead.phoneNumber}
                     </TableCell>
                     <TableCell>{lead.email || "-"}</TableCell>
+                    <TableCell className="text-sm">{lead.agentName || "-"}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
@@ -399,6 +464,37 @@ export default function AdminPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Edit Agent Dialog */}
+      <Dialog open={!!editAgent} onOpenChange={(open) => { if (!open) setEditAgent(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Agent</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditAgent} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Full Name</Label>
+              <Input
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={saving}>
+              {saving ? "Saving..." : "Save Changes"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

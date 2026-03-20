@@ -8,6 +8,7 @@ import { z } from "zod/v4";
 
 const updateUserSchema = z.object({
   name: z.string().min(1).optional(),
+  email: z.email().optional(),
   role: z.enum(["agent", "admin"]).optional(),
   isActive: z.boolean().optional(),
 });
@@ -36,6 +37,7 @@ export async function PATCH(
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (parsed.data.name !== undefined) updateData.name = parsed.data.name;
+    if (parsed.data.email !== undefined) updateData.email = parsed.data.email;
     if (parsed.data.role !== undefined) updateData.role = parsed.data.role;
     if (parsed.data.isActive !== undefined)
       updateData.isActive = parsed.data.isActive;

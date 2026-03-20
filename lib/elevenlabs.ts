@@ -23,9 +23,15 @@ export async function initiateOutboundCall(
     };
   } else {
     url = "https://api.elevenlabs.io/v1/convai/outbound-call";
+    // Support comma-separated DIDWW numbers — pick one at random
+    const numbers = credentials.didww_phone_number!
+      .split(",")
+      .map((n) => n.trim())
+      .filter(Boolean);
+    const fromNumber = numbers[Math.floor(Math.random() * numbers.length)];
     body = {
       agent_id: credentials.elevenlabs_agent_id,
-      from_number: credentials.didww_phone_number!,
+      from_number: fromNumber,
       to_number: toNumber,
     };
   }

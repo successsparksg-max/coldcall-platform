@@ -24,7 +24,7 @@ interface NavItem {
 export function DashboardNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const role = user?.role;
 
   const agentNav: NavItem[] = [
@@ -75,8 +75,8 @@ export function DashboardNav() {
 
   async function handleSignOut() {
     await fetch("/api/auth/logout", { method: "POST" });
+    await refresh();
     router.push("/login");
-    router.refresh();
   }
 
   return (

@@ -33,6 +33,7 @@ import {
   AlertCircle,
   Settings,
   XCircle,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -61,6 +62,9 @@ export default function ITAdminPage() {
     sent: boolean;
     error: string | null;
   } | null>(null);
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", email: "" });
+  const [saving, setSaving] = useState(false);
 
   async function fetchUsers() {
     try {
@@ -142,6 +146,31 @@ export default function ITAdminPage() {
     if (res.ok) {
       toast.success(isActive ? "User deactivated" : "User reactivated");
       fetchUsers();
+    }
+  }
+
+  async function handleEditUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editUser) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/users/${editUser.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editForm.name, email: editForm.email }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success("User updated");
+        setEditUser(null);
+        fetchUsers();
+      } else {
+        toast.error(data.error || "Failed to update user");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -366,6 +395,16 @@ export default function ITAdminPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditUser(u);
+                          setEditForm({ name: u.name, email: u.email });
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
                       {u.role === "agent" && (
                         <Link
                           href={`/it-admin/agents/${u.id}/credentials`}
@@ -393,6 +432,37 @@ export default function ITAdminPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Edit User Dialog */}
+      <Dialog open={!!editUser} onOpenChange={(open) => { if (!open) setEditUser(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditUser} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Full Name</Label>
+              <Input
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={saving}>
+              {saving ? "Saving..." : "Save Changes"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

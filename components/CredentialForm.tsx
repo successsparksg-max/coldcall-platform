@@ -238,16 +238,16 @@ export function CredentialForm({
             </>
           ) : (
             <div className="space-y-2">
-              <Label>DIDWW Phone Number *</Label>
+              <Label>DIDWW Phone Number(s) *</Label>
               <Input
-                placeholder="+6531252383"
+                placeholder="+6531252383, +6531252384"
                 value={form.didwwPhoneNumber}
                 onChange={(e) =>
                   updateField("didwwPhoneNumber", e.target.value)
                 }
               />
               <p className="text-xs text-gray-500">
-                Also serves as caller ID. Found in DIDWW dashboard.
+                Comma-separated for multiple numbers. Also serves as caller ID. The system will rotate through them. Found in DIDWW dashboard.
               </p>
             </div>
           )}

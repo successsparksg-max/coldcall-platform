@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,7 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
+  const { refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -39,6 +41,9 @@ export default function LoginPage() {
         return;
       }
 
+      // Refresh auth context so nav updates immediately
+      await refresh();
+
       // Redirect based on role
       const role = data.data?.role;
       if (role === "admin") {
@@ -48,7 +53,6 @@ export default function LoginPage() {
       } else {
         router.push("/dashboard");
       }
-      router.refresh();
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);

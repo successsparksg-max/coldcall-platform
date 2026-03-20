@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { users, callLists, calls, uploadValidations } from "@/lib/schema";
+import { users, callLists, callEntries, calls, uploadValidations } from "@/lib/schema";
 import { requireRole, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess } from "@/lib/api-helpers";
 import { eq, sql } from "drizzle-orm";
@@ -28,7 +28,7 @@ export async function GET() {
       })
       .from(calls);
 
-    // Hot leads: rating >= 4 and booked
+    // Hot leads: rating >= 4 and booked, with agent name
     const hotLeads = await db
       .select({
         id: calls.id,
@@ -39,8 +39,12 @@ export async function GET() {
         summary: calls.summary,
         bookingStatus: calls.bookingStatus,
         createdAt: calls.createdAt,
+        agentName: users.name,
       })
       .from(calls)
+      .leftJoin(callEntries, eq(calls.callEntryId, callEntries.id))
+      .leftJoin(callLists, eq(callEntries.callListId, callLists.id))
+      .leftJoin(users, eq(callLists.agentId, users.id))
       .where(
         sql`${calls.rating} >= 4 AND ${calls.bookingStatus} = 'TRUE'`
       )
