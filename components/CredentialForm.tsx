@@ -67,10 +67,13 @@ export function CredentialForm({
       if (form.elevenlabsWebhookSecret) {
         payload.elevenlabsWebhookSecret = form.elevenlabsWebhookSecret;
       }
-      if (form.telephonyProvider === "twilio") {
+      if (form.elevenlabsPhoneNumberId) {
         payload.elevenlabsPhoneNumberId = form.elevenlabsPhoneNumberId;
+      }
+      if (form.outboundCallerId) {
         payload.outboundCallerId = form.outboundCallerId;
-      } else {
+      }
+      if (form.didwwPhoneNumber) {
         payload.didwwPhoneNumber = form.didwwPhoneNumber;
       }
 
