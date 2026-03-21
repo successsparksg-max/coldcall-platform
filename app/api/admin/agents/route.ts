@@ -65,8 +65,7 @@ export async function GET() {
             appointmentsBooked: sql<number>`count(*) filter (where ${calls.bookingStatus} = 'TRUE')`,
           })
           .from(calls)
-          .innerJoin(
-            callLists,
+          .where(
             sql`${calls.callEntryId} IN (
               SELECT id FROM call_entries WHERE call_list_id IN (
                 SELECT id FROM call_lists WHERE agent_id = ${agent.id}
