@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 
 const credentialSchema = z.object({
-  elevenlabsApiKey: z.string().min(1),
+  elevenlabsApiKey: z.string().optional(),
   elevenlabsAgentId: z.string().min(1),
   elevenlabsWebhookSecret: z.string().optional(),
   telephonyProvider: z.enum(["twilio", "didww"]),
@@ -88,10 +88,35 @@ export async function PUT(
       );
     }
 
-    const encryptedApiKey = encrypt(data.elevenlabsApiKey);
-    const encryptedWebhookSecret = data.elevenlabsWebhookSecret
-      ? encrypt(data.elevenlabsWebhookSecret)
-      : null;
+    // Fetch existing credentials to preserve API key / webhook secret if not re-entered
+    const [existingCred] = await db
+      .select()
+      .from(agentCredentials)
+      .where(eq(agentCredentials.agentId, agentId))
+      .limit(1);
+
+    // API key: use new one if provided, otherwise keep existing
+    let encryptedApiKey: string;
+    let rawApiKey: string;
+    if (data.elevenlabsApiKey) {
+      encryptedApiKey = encrypt(data.elevenlabsApiKey);
+      rawApiKey = data.elevenlabsApiKey;
+    } else if (existingCred) {
+      encryptedApiKey = existingCred.elevenlabsApiKey;
+      rawApiKey = decrypt(existingCred.elevenlabsApiKey);
+    } else {
+      return apiError("ElevenLabs API Key is required for new credentials", 422);
+    }
+
+    // Webhook secret: use new one if provided, otherwise keep existing
+    let encryptedWebhookSecret: string | null;
+    if (data.elevenlabsWebhookSecret) {
+      encryptedWebhookSecret = encrypt(data.elevenlabsWebhookSecret);
+    } else if (existingCred?.elevenlabsWebhookSecret) {
+      encryptedWebhookSecret = existingCred.elevenlabsWebhookSecret;
+    } else {
+      encryptedWebhookSecret = null;
+    }
 
     const outboundCallerId =
       data.outboundCallerId ||
@@ -113,14 +138,7 @@ export async function PUT(
       updatedAt: new Date(),
     };
 
-    // Upsert
-    const existing = await db
-      .select({ id: agentCredentials.id })
-      .from(agentCredentials)
-      .where(eq(agentCredentials.agentId, agentId))
-      .limit(1);
-
-    if (existing.length > 0) {
+    if (existingCred) {
       await db
         .update(agentCredentials)
         .set(values)
@@ -145,7 +163,7 @@ export async function PUT(
           {
             method: "PATCH",
             headers: {
-              "xi-api-key": data.elevenlabsApiKey,
+              "xi-api-key": rawApiKey,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
