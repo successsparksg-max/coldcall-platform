@@ -10,8 +10,17 @@ Analyse very carefully and extract the following fields and return ONLY a valid 
   "booking_location": string or null,
   "booking_date": string or null,
   "booking_time": string or null,
-  "estimated_cost": number
+  "estimated_cost": number,
+  "is_voicemail": boolean
 }
+
+Voicemail detection:
+Set is_voicemail to true if the call went to a voicemail/answering machine. Signs include:
+- Automated greeting ("Please leave a message after the beep", "is not available", "cannot take your call")
+- Only one side talking (the AI agent speaks but no real human responds)
+- Very short call with no meaningful human interaction
+- Standard carrier/phone voicemail messages
+Set is_voicemail to false if a real person answered and had a conversation.
 
 Rating scale:
 1 = Poor: Did not understand or help, not answering

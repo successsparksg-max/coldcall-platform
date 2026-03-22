@@ -1,7 +1,7 @@
 import { inngest } from "./client";
 import { db } from "@/lib/db";
-import { calls } from "@/lib/schema";
-import { eq } from "drizzle-orm";
+import { calls, callEntries, callLists } from "@/lib/schema";
+import { eq, sql } from "drizzle-orm";
 import { ANALYSIS_PROMPT } from "@/lib/analysis-prompt";
 import { generateText } from "ai";
 
@@ -77,6 +77,7 @@ export const analyzeCallTranscript = inngest.createFunction(
           booking_date: null,
           booking_time: null,
           estimated_cost: null,
+          is_voicemail: false,
         };
       }
     });
@@ -85,11 +86,13 @@ export const analyzeCallTranscript = inngest.createFunction(
       await db
         .update(calls)
         .set({
-          rating: cleaned.rating,
-          summary: cleaned.summary,
+          rating: cleaned.is_voicemail ? 1 : cleaned.rating,
+          summary: cleaned.is_voicemail
+            ? `[Voicemail] ${cleaned.summary || "Call went to voicemail"}`
+            : cleaned.summary,
           email: cleaned.email,
           name: cleaned.user_name,
-          bookingStatus: cleaned.booking_status,
+          bookingStatus: cleaned.is_voicemail ? "FALSE" : cleaned.booking_status,
           bookingLocation: cleaned.booking_location,
           bookingDate: cleaned.booking_date,
           bookingTime: cleaned.booking_time,
@@ -98,6 +101,44 @@ export const analyzeCallTranscript = inngest.createFunction(
           recordingUrl: recordingUrl,
         })
         .where(eq(calls.conversationId, conversationId));
+
+      // If voicemail detected, reclassify the call entry as no_answer
+      if (cleaned.is_voicemail) {
+        const [callRecord] = await db
+          .select({ callEntryId: calls.callEntryId })
+          .from(calls)
+          .where(eq(calls.conversationId, conversationId))
+          .limit(1);
+
+        if (callRecord?.callEntryId) {
+          // Get current entry status
+          const [entry] = await db
+            .select({ callStatus: callEntries.callStatus, callListId: callEntries.callListId })
+            .from(callEntries)
+            .where(eq(callEntries.id, callRecord.callEntryId))
+            .limit(1);
+
+          if (entry && entry.callStatus === "answered") {
+            await db
+              .update(callEntries)
+              .set({ callStatus: "no_answer", updatedAt: new Date() })
+              .where(eq(callEntries.id, callRecord.callEntryId));
+
+            // Adjust list counters: -1 answered, +1 no_answer
+            await db
+              .update(callLists)
+              .set({
+                callsAnswered: sql`GREATEST(${callLists.callsAnswered} - 1, 0)`,
+                callsNoAnswer: sql`${callLists.callsNoAnswer} + 1`,
+              })
+              .where(eq(callLists.id, entry.callListId));
+
+            console.log(
+              `[voicemail] Reclassified entry ${callRecord.callEntryId} from answered → no_answer`
+            );
+          }
+        }
+      }
     });
   }
 );
