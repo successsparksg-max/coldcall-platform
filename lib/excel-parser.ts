@@ -70,7 +70,7 @@ export function parseExcel(buffer: ArrayBuffer): ParseResult {
     return {
       success: false,
       entries: [],
-      errors: { ...errors, file: "Invalid Excel file" },
+      errors: { ...errors, file: "Invalid file format. Upload .xlsx, .xls, or .csv" },
       warnings,
       summary: { totalRows: 0, validRows: 0, errorRows: 0 },
     };

@@ -28,8 +28,9 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
     setError(null);
     setValidationErrors(null);
 
-    if (!f.name.endsWith(".xlsx")) {
-      setError("Only .xlsx files are accepted");
+    const name = f.name.toLowerCase();
+    if (!name.endsWith(".xlsx") && !name.endsWith(".xls") && !name.endsWith(".csv")) {
+      setError("Only .xlsx, .xls, and .csv files are accepted");
       return;
     }
     if (f.size > 10 * 1024 * 1024) {
@@ -130,7 +131,7 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
             <>
               <Upload className="mb-4 h-10 w-10 text-gray-400" />
               <p className="text-gray-600">
-                Drag and drop your .xlsx file here, or
+                Drag and drop your spreadsheet here, or
               </p>
               <label className="mt-2 cursor-pointer">
                 <span className="text-blue-600 hover:underline">
@@ -138,7 +139,7 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
                 </span>
                 <input
                   type="file"
-                  accept=".xlsx"
+                  accept=".xlsx,.xls,.csv"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];

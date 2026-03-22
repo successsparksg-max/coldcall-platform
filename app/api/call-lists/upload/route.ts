@@ -21,13 +21,13 @@ export async function POST(req: NextRequest) {
       return apiError("No file uploaded", 400);
     }
 
-    // File type check
-    if (
-      !file.name.endsWith(".xlsx") &&
-      file.type !==
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    ) {
-      return apiError("Only .xlsx files are accepted", 422);
+    // File type check — accept .xlsx, .xls, .csv (Google Sheets exports)
+    const allowedExtensions = [".xlsx", ".xls", ".csv"];
+    const hasValidExt = allowedExtensions.some((ext) =>
+      file.name.toLowerCase().endsWith(ext)
+    );
+    if (!hasValidExt) {
+      return apiError("Only .xlsx, .xls, and .csv files are accepted", 422);
     }
 
     // Size check
