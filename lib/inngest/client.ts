@@ -2,7 +2,7 @@ import { Inngest } from "inngest";
 
 type Events = {
   "calllist/start": {
-    data: { callListId: string; agentId: string };
+    data: { callListId: string; agentId: string; botCredentialIds?: string[] };
   };
   "elevenlabs/call-completed": {
     data: { conversation_id: string };

@@ -4,10 +4,15 @@ import { agentCredentials } from "@/lib/schema";
 import { requireRole, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
 import { encrypt, decrypt, maskCredential } from "@/lib/encryption";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod/v4";
 
+const isUuid = (s: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
 const credentialSchema = z.object({
+  botId: z.string().optional(), // if provided, update existing bot
+  botLabel: z.string().min(1).optional(),
   elevenlabsApiKey: z.string().optional(),
   elevenlabsAgentId: z.string().min(1),
   elevenlabsWebhookSecret: z.string().optional(),
@@ -17,6 +22,7 @@ const credentialSchema = z.object({
   outboundCallerId: z.string().optional(),
 });
 
+// GET: return ALL bot credentials for an agent
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ agentId: string }> }
@@ -25,37 +31,33 @@ export async function GET(
     await requireRole("it_admin", "admin");
     const { agentId } = await params;
 
-    const [cred] = await db
+    const creds = await db
       .select()
       .from(agentCredentials)
-      .where(eq(agentCredentials.agentId, agentId))
-      .limit(1);
+      .where(eq(agentCredentials.agentId, agentId));
 
-    if (!cred) {
-      return apiSuccess(null);
-    }
-
-    // Return masked values
-    return apiSuccess({
+    const masked = creds.map((cred) => ({
       id: cred.id,
       agentId: cred.agentId,
+      botLabel: cred.botLabel,
       elevenlabsApiKey: maskCredential(decrypt(cred.elevenlabsApiKey)),
       elevenlabsAgentId: cred.elevenlabsAgentId,
-      elevenlabsWebhookSecret: cred.elevenlabsWebhookSecret
-        ? "****"
-        : null,
+      elevenlabsWebhookSecret: cred.elevenlabsWebhookSecret ? "****" : null,
       telephonyProvider: cred.telephonyProvider,
       elevenlabsPhoneNumberId: cred.elevenlabsPhoneNumberId,
       didwwPhoneNumber: cred.didwwPhoneNumber,
       outboundCallerId: cred.outboundCallerId,
       credentialsComplete: cred.credentialsComplete,
       updatedAt: cred.updatedAt,
-    });
+    }));
+
+    return apiSuccess(masked);
   } catch (error) {
     return handleAuthError(error);
   }
 }
 
+// PUT: create or update a bot credential
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ agentId: string }> }
@@ -72,28 +74,35 @@ export async function PUT(
     const data = parsed.data;
 
     // Validate provider-specific fields
+    if (data.telephonyProvider === "twilio" && !data.elevenlabsPhoneNumberId) {
+      return apiError("Phone Number ID required for Twilio provider", 422);
+    }
     if (
-      data.telephonyProvider === "twilio" &&
+      data.telephonyProvider === "didww" &&
+      !data.didwwPhoneNumber &&
       !data.elevenlabsPhoneNumberId
     ) {
-      return apiError(
-        "Phone Number ID required for Twilio provider",
-        422
-      );
-    }
-    if (data.telephonyProvider === "didww" && !data.didwwPhoneNumber && !data.elevenlabsPhoneNumberId) {
       return apiError(
         "Either ElevenLabs Phone Number ID(s) or DIDWW phone number(s) required",
         422
       );
     }
 
-    // Fetch existing credentials to preserve API key / webhook secret if not re-entered
-    const [existingCred] = await db
-      .select()
-      .from(agentCredentials)
-      .where(eq(agentCredentials.agentId, agentId))
-      .limit(1);
+    // Check for existing bot (by botId or by matching agent+elevenlabsAgentId)
+    let existingCred = null;
+    if (data.botId) {
+      const [found] = await db
+        .select()
+        .from(agentCredentials)
+        .where(
+          and(
+            eq(agentCredentials.id, data.botId),
+            eq(agentCredentials.agentId, agentId)
+          )
+        )
+        .limit(1);
+      existingCred = found || null;
+    }
 
     // API key: use new one if provided, otherwise keep existing
     let encryptedApiKey: string;
@@ -105,7 +114,10 @@ export async function PUT(
       encryptedApiKey = existingCred.elevenlabsApiKey;
       rawApiKey = decrypt(existingCred.elevenlabsApiKey);
     } else {
-      return apiError("ElevenLabs API Key is required for new credentials", 422);
+      return apiError(
+        "ElevenLabs API Key is required for new bot credentials",
+        422
+      );
     }
 
     // Webhook secret: use new one if provided, otherwise keep existing
@@ -120,12 +132,11 @@ export async function PUT(
 
     const outboundCallerId =
       data.outboundCallerId ||
-      (data.telephonyProvider === "didww"
-        ? data.didwwPhoneNumber
-        : undefined);
+      (data.telephonyProvider === "didww" ? data.didwwPhoneNumber : undefined);
 
     const values = {
       agentId,
+      botLabel: data.botLabel || existingCred?.botLabel || "Default Bot",
       elevenlabsApiKey: encryptedApiKey,
       elevenlabsAgentId: data.elevenlabsAgentId,
       elevenlabsWebhookSecret: encryptedWebhookSecret,
@@ -134,7 +145,7 @@ export async function PUT(
       didwwPhoneNumber: data.didwwPhoneNumber || null,
       outboundCallerId: outboundCallerId || null,
       credentialsComplete: true,
-      updatedBy: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) ? user.id : null,
+      updatedBy: isUuid(user.id) ? user.id : null,
       updatedAt: new Date(),
     };
 
@@ -142,7 +153,7 @@ export async function PUT(
       await db
         .update(agentCredentials)
         .set(values)
-        .where(eq(agentCredentials.agentId, agentId));
+        .where(eq(agentCredentials.id, existingCred.id));
     } else {
       await db.insert(agentCredentials).values(values);
     }
@@ -167,9 +178,7 @@ export async function PUT(
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              platform_settings: {
-                webhook: webhookConfig,
-              },
+              platform_settings: { webhook: webhookConfig },
             }),
           }
         );
@@ -184,10 +193,37 @@ export async function PUT(
     }
 
     return apiSuccess({
-      message: "Credentials saved",
+      message: "Bot credentials saved",
       webhookConfigured,
       webhookError,
     });
+  } catch (error) {
+    return handleAuthError(error);
+  }
+}
+
+// DELETE: remove a specific bot credential
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ agentId: string }> }
+) {
+  try {
+    await requireRole("it_admin", "admin");
+    const { agentId } = await params;
+    const { botId } = await req.json();
+
+    if (!botId) return apiError("botId is required", 422);
+
+    await db
+      .delete(agentCredentials)
+      .where(
+        and(
+          eq(agentCredentials.id, botId),
+          eq(agentCredentials.agentId, agentId)
+        )
+      );
+
+    return apiSuccess({ message: "Bot credential deleted" });
   } catch (error) {
     return handleAuthError(error);
   }

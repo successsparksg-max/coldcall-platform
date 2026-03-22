@@ -30,14 +30,18 @@ export async function POST(
       return apiError("Call list is not in ready state", 400);
     }
 
-    // Check credentials
-    const [cred] = await db
+    // Check credentials — fetch all active bots
+    const bots = await db
       .select()
       .from(agentCredentials)
-      .where(eq(agentCredentials.agentId, list.agentId))
-      .limit(1);
+      .where(
+        and(
+          eq(agentCredentials.agentId, list.agentId),
+          eq(agentCredentials.credentialsComplete, true)
+        )
+      );
 
-    if (!cred || !cred.credentialsComplete) {
+    if (bots.length === 0) {
       return apiError("Agent credentials not configured", 400);
     }
 
@@ -47,13 +51,19 @@ export async function POST(
       .set({ callStatus: "in_progress", startedAt: new Date() })
       .where(eq(callLists.id, id));
 
-    // Trigger Inngest
+    // Trigger Inngest with all bot IDs for parallel calling
     await inngest.send({
       name: "calllist/start",
-      data: { callListId: id, agentId: list.agentId },
+      data: {
+        callListId: id,
+        agentId: list.agentId,
+        botCredentialIds: bots.map((b) => b.id),
+      },
     });
 
-    return apiSuccess({ message: "Call list started" });
+    return apiSuccess({
+      message: `Call list started with ${bots.length} bot(s)`,
+    });
   } catch (error) {
     return handleAuthError(error);
   }

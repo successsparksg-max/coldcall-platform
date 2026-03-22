@@ -11,21 +11,26 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { CheckCircle, XCircle, Loader2, Save } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, Save, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+
+export interface BotConfig {
+  id?: string;
+  botLabel: string;
+  elevenlabsApiKey: string;
+  elevenlabsAgentId: string;
+  elevenlabsWebhookSecret: string;
+  telephonyProvider: string;
+  elevenlabsPhoneNumberId: string;
+  didwwPhoneNumber: string;
+  outboundCallerId: string;
+}
 
 interface CredentialFormProps {
   agentId: string;
   agentName: string;
-  initialData?: {
-    elevenlabsApiKey: string;
-    elevenlabsAgentId: string;
-    elevenlabsWebhookSecret: string | null;
-    telephonyProvider: string;
-    elevenlabsPhoneNumberId: string | null;
-    didwwPhoneNumber: string | null;
-    outboundCallerId: string | null;
-  } | null;
+  initialBots: BotConfig[];
+  onRefresh: () => void;
 }
 
 interface TestResult {
@@ -34,20 +39,35 @@ interface TestResult {
   message: string;
 }
 
-export function CredentialForm({
-  agentId,
-  agentName,
-  initialData,
-}: CredentialFormProps) {
-  const [form, setForm] = useState({
+function emptyBot(): BotConfig {
+  return {
+    botLabel: "",
     elevenlabsApiKey: "",
-    elevenlabsAgentId: initialData?.elevenlabsAgentId || "",
+    elevenlabsAgentId: "",
     elevenlabsWebhookSecret: "",
-    telephonyProvider: initialData?.telephonyProvider || "twilio",
-    elevenlabsPhoneNumberId: initialData?.elevenlabsPhoneNumberId || "",
-    didwwPhoneNumber: initialData?.didwwPhoneNumber || "",
-    outboundCallerId: initialData?.outboundCallerId || "",
-  });
+    telephonyProvider: "didww",
+    elevenlabsPhoneNumberId: "",
+    didwwPhoneNumber: "",
+    outboundCallerId: "",
+  };
+}
+
+function BotForm({
+  bot,
+  index,
+  agentId,
+  onSave,
+  onDelete,
+  isOnly,
+}: {
+  bot: BotConfig;
+  index: number;
+  agentId: string;
+  onSave: () => void;
+  onDelete: () => void;
+  isOnly: boolean;
+}) {
+  const [form, setForm] = useState<BotConfig>({ ...bot });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResults, setTestResults] = useState<TestResult[] | null>(null);
@@ -60,22 +80,16 @@ export function CredentialForm({
     setSaving(true);
     try {
       const payload: Record<string, string | undefined> = {
-        elevenlabsApiKey: form.elevenlabsApiKey,
+        botLabel: form.botLabel || `Bot ${index + 1}`,
         elevenlabsAgentId: form.elevenlabsAgentId,
         telephonyProvider: form.telephonyProvider,
       };
-      if (form.elevenlabsWebhookSecret) {
-        payload.elevenlabsWebhookSecret = form.elevenlabsWebhookSecret;
-      }
-      if (form.elevenlabsPhoneNumberId) {
-        payload.elevenlabsPhoneNumberId = form.elevenlabsPhoneNumberId;
-      }
-      if (form.outboundCallerId) {
-        payload.outboundCallerId = form.outboundCallerId;
-      }
-      if (form.didwwPhoneNumber) {
-        payload.didwwPhoneNumber = form.didwwPhoneNumber;
-      }
+      if (bot.id) payload.botId = bot.id;
+      if (form.elevenlabsApiKey) payload.elevenlabsApiKey = form.elevenlabsApiKey;
+      if (form.elevenlabsWebhookSecret) payload.elevenlabsWebhookSecret = form.elevenlabsWebhookSecret;
+      if (form.elevenlabsPhoneNumberId) payload.elevenlabsPhoneNumberId = form.elevenlabsPhoneNumberId;
+      if (form.outboundCallerId) payload.outboundCallerId = form.outboundCallerId;
+      if (form.didwwPhoneNumber) payload.didwwPhoneNumber = form.didwwPhoneNumber;
 
       const res = await fetch(`/api/credentials/${agentId}`, {
         method: "PUT",
@@ -85,12 +99,13 @@ export function CredentialForm({
       const data = await res.json();
       if (res.ok) {
         if (data.data?.webhookConfigured) {
-          toast.success("Credentials saved & webhook configured automatically");
+          toast.success("Bot saved & webhook configured");
         } else if (data.data?.webhookError) {
-          toast.success("Credentials saved, but webhook auto-config failed: " + data.data.webhookError + ". Set it manually in ElevenLabs.");
+          toast.success("Bot saved, webhook auto-config failed: " + data.data.webhookError);
         } else {
-          toast.success("Credentials saved");
+          toast.success("Bot saved");
         }
+        onSave();
       } else {
         toast.error(data.error || "Failed to save");
       }
@@ -102,11 +117,17 @@ export function CredentialForm({
   }
 
   async function handleTest() {
+    if (!bot.id) {
+      toast.error("Save the bot first before testing");
+      return;
+    }
     setTesting(true);
     setTestResults(null);
     try {
       const res = await fetch(`/api/credentials/${agentId}/test`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botId: bot.id }),
       });
       const data = await res.json();
       if (data.data?.results) {
@@ -121,198 +142,159 @@ export function CredentialForm({
     }
   }
 
+  async function handleDelete() {
+    if (!bot.id) {
+      onDelete();
+      return;
+    }
+    if (!confirm(`Delete bot "${form.botLabel || `Bot ${index + 1}`}"?`)) return;
+    try {
+      const res = await fetch(`/api/credentials/${agentId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botId: bot.id }),
+      });
+      if (res.ok) {
+        toast.success("Bot deleted");
+        onSave();
+      } else {
+        toast.error("Failed to delete");
+      }
+    } catch {
+      toast.error("Network error");
+    }
+  }
+
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Credentials for {agentName}</CardTitle>
-          <CardDescription>
-            Enter the ElevenLabs and telephony credentials provided by the
-            agent.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* ElevenLabs */}
-          <div className="space-y-2">
-            <Label>ElevenLabs API Key *</Label>
-            <Input
-              type="password"
-              placeholder={
-                initialData?.elevenlabsApiKey || "sk_..."
-              }
-              value={form.elevenlabsApiKey}
-              onChange={(e) => updateField("elevenlabsApiKey", e.target.value)}
-            />
-            <p className="text-xs text-gray-500">
-              Found in ElevenLabs → Profile → API Keys
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label>ElevenLabs Agent ID *</Label>
-            <Input
-              placeholder="agent_01jx78nk7j..."
-              value={form.elevenlabsAgentId}
-              onChange={(e) =>
-                updateField("elevenlabsAgentId", e.target.value)
-              }
-            />
-            <p className="text-xs text-gray-500">
-              Found in ElevenLabs → Conversational AI → Agent Settings
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Post-Call Webhook HMAC Secret</Label>
-            <Input
-              type="password"
-              placeholder="Paste the HMAC secret from ElevenLabs"
-              value={form.elevenlabsWebhookSecret}
-              onChange={(e) =>
-                updateField("elevenlabsWebhookSecret", e.target.value)
-              }
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-gray-500">
-              In ElevenLabs: Settings → Post-Call Webhook → Create Webhook → set URL to your app, Auth Method: HMAC. Copy the generated secret and paste it here.
-            </p>
-          </div>
-
-          {/* Telephony Provider */}
-          <div className="space-y-2">
-            <Label>Telephony Provider *</Label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="provider"
-                  value="twilio"
-                  checked={form.telephonyProvider === "twilio"}
-                  onChange={() =>
-                    updateField("telephonyProvider", "twilio")
-                  }
-                />
-                Twilio (via ElevenLabs)
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="provider"
-                  value="didww"
-                  checked={form.telephonyProvider === "didww"}
-                  onChange={() =>
-                    updateField("telephonyProvider", "didww")
-                  }
-                />
-                DIDWW (Direct SIP)
-              </label>
-            </div>
-          </div>
-
-          {/* Provider-specific fields */}
-          {form.telephonyProvider === "twilio" ? (
-            <>
-              <div className="space-y-2">
-                <Label>ElevenLabs Phone Number ID(s) *</Label>
-                <Input
-                  placeholder="phnum_abc123, phnum_def456"
-                  value={form.elevenlabsPhoneNumberId}
-                  onChange={(e) =>
-                    updateField("elevenlabsPhoneNumberId", e.target.value)
-                  }
-                />
-                <p className="text-xs text-gray-500">
-                  Comma-separated for multiple numbers. Found in ElevenLabs → Phone Numbers (in the URL: phnum_...). The system will rotate through them.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>Outbound Caller ID(s) *</Label>
-                <Input
-                  placeholder="+6531060237, +6531065066"
-                  value={form.outboundCallerId}
-                  onChange={(e) =>
-                    updateField("outboundCallerId", e.target.value)
-                  }
-                />
-                <p className="text-xs text-gray-500">
-                  Comma-separated, matching the order of Phone Number IDs above. The number contacts see when called.
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <Label>ElevenLabs Phone Number ID(s)</Label>
-                <Input
-                  placeholder="phnum_abc123, phnum_def456"
-                  value={form.elevenlabsPhoneNumberId}
-                  onChange={(e) =>
-                    updateField("elevenlabsPhoneNumberId", e.target.value)
-                  }
-                />
-                <p className="text-xs text-gray-500">
-                  If your DIDWW numbers are registered in ElevenLabs, enter their phnum_ IDs here (comma-separated). Found in the URL when viewing the number in ElevenLabs → Phone Numbers.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>DIDWW Phone Number(s)</Label>
-                <Input
-                  placeholder="+6531252383, +6531252384"
-                  value={form.didwwPhoneNumber}
-                  onChange={(e) =>
-                    updateField("didwwPhoneNumber", e.target.value)
-                  }
-                />
-                <p className="text-xs text-gray-500">
-                  Only needed if numbers are NOT registered in ElevenLabs (direct SIP). Comma-separated for multiple.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>Outbound Caller ID(s)</Label>
-                <Input
-                  placeholder="+6531060237, +6531065066"
-                  value={form.outboundCallerId}
-                  onChange={(e) =>
-                    updateField("outboundCallerId", e.target.value)
-                  }
-                />
-                <p className="text-xs text-gray-500">
-                  The number(s) contacts see when called. Comma-separated, matching the order above.
-                </p>
-              </div>
-            </>
-          )}
-
-          <div className="flex gap-3 pt-2">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-1 h-4 w-4" />
-              )}
-              Save Credentials
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">
+            {bot.id ? form.botLabel || `Bot ${index + 1}` : "New Bot"}
+          </CardTitle>
+          {!isOnly && (
+            <Button variant="ghost" size="sm" onClick={handleDelete} className="text-red-500 hover:text-red-700">
+              <Trash2 className="h-4 w-4" />
             </Button>
-            <Button
-              variant="outline"
-              onClick={handleTest}
-              disabled={testing}
-            >
-              {testing ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : null}
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Bot Label *</Label>
+          <Input
+            placeholder="e.g. English Bot, SG Line 1"
+            value={form.botLabel}
+            onChange={(e) => updateField("botLabel", e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>ElevenLabs API Key</Label>
+          <Input
+            type="password"
+            placeholder={bot.id ? "Leave empty to keep existing" : "sk_..."}
+            value={form.elevenlabsApiKey}
+            onChange={(e) => updateField("elevenlabsApiKey", e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>ElevenLabs Agent ID *</Label>
+          <Input
+            placeholder="agent_01jx78nk7j..."
+            value={form.elevenlabsAgentId}
+            onChange={(e) => updateField("elevenlabsAgentId", e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Post-Call Webhook HMAC Secret</Label>
+          <Input
+            type="password"
+            placeholder={bot.id ? "Leave empty to keep existing" : "Paste HMAC secret"}
+            value={form.elevenlabsWebhookSecret}
+            onChange={(e) => updateField("elevenlabsWebhookSecret", e.target.value)}
+            className="font-mono text-sm"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Telephony Provider *</Label>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name={`provider-${index}`}
+                value="twilio"
+                checked={form.telephonyProvider === "twilio"}
+                onChange={() => updateField("telephonyProvider", "twilio")}
+              />
+              Twilio (via ElevenLabs)
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name={`provider-${index}`}
+                value="didww"
+                checked={form.telephonyProvider === "didww"}
+                onChange={() => updateField("telephonyProvider", "didww")}
+              />
+              DIDWW (Direct SIP)
+            </label>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>ElevenLabs Phone Number ID(s)</Label>
+          <Input
+            placeholder="phnum_abc123, phnum_def456"
+            value={form.elevenlabsPhoneNumberId}
+            onChange={(e) => updateField("elevenlabsPhoneNumberId", e.target.value)}
+          />
+          <p className="text-xs text-gray-500">
+            Comma-separated. Found in the URL in ElevenLabs → Phone Numbers.
+          </p>
+        </div>
+
+        {form.telephonyProvider === "didww" && (
+          <div className="space-y-2">
+            <Label>DIDWW Phone Number(s)</Label>
+            <Input
+              placeholder="+6531252383, +6531252384"
+              value={form.didwwPhoneNumber}
+              onChange={(e) => updateField("didwwPhoneNumber", e.target.value)}
+            />
+            <p className="text-xs text-gray-500">
+              Only if numbers are NOT registered in ElevenLabs.
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <Label>Outbound Caller ID(s)</Label>
+          <Input
+            placeholder="+6531060237, +6531065066"
+            value={form.outboundCallerId}
+            onChange={(e) => updateField("outboundCallerId", e.target.value)}
+          />
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
+            Save Bot
+          </Button>
+          {bot.id && (
+            <Button variant="outline" onClick={handleTest} disabled={testing}>
+              {testing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
               Test Connection
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          )}
+        </div>
 
-      {/* Test Results */}
-      {testResults && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Test Results</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
+        {testResults && (
+          <div className="space-y-2 rounded-md bg-gray-50 p-3">
             {testResults.map((result, i) => (
               <div key={i} className="flex items-center gap-2">
                 {result.status === "pass" ? (
@@ -321,20 +303,74 @@ export function CredentialForm({
                   <XCircle className="h-4 w-4 text-red-500" />
                 )}
                 <span className="font-medium">{result.test}:</span>
-                <span
-                  className={
-                    result.status === "pass"
-                      ? "text-green-600"
-                      : "text-red-500"
-                  }
-                >
+                <span className={result.status === "pass" ? "text-green-600" : "text-red-500"}>
                   {result.message}
                 </span>
               </div>
             ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function CredentialForm({
+  agentId,
+  agentName,
+  initialBots,
+  onRefresh,
+}: CredentialFormProps) {
+  const [bots, setBots] = useState<BotConfig[]>(
+    initialBots.length > 0 ? initialBots : []
+  );
+
+  function addBot() {
+    setBots([...bots, emptyBot()]);
+  }
+
+  function removeUnsavedBot(index: number) {
+    setBots(bots.filter((_, i) => i !== index));
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Agent Bots for {agentName}</CardTitle>
+              <CardDescription>
+                Each bot is a separate ElevenLabs agent that can call in parallel.
+                {bots.length > 1 && ` ${bots.length} bots will call ${bots.length} contacts simultaneously.`}
+              </CardDescription>
+            </div>
+            <Button onClick={addBot} variant="outline">
+              <Plus className="mr-1 h-4 w-4" /> Add Bot
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
+
+      {bots.length === 0 && (
+        <Card>
+          <CardContent className="py-8 text-center text-gray-500">
+            No bots configured. Click &quot;Add Bot&quot; to create one.
           </CardContent>
         </Card>
       )}
+
+      {bots.map((bot, i) => (
+        <BotForm
+          key={bot.id || `new-${i}`}
+          bot={bot}
+          index={i}
+          agentId={agentId}
+          onSave={onRefresh}
+          onDelete={() => removeUnsavedBot(i)}
+          isOnly={bots.length === 1}
+        />
+      ))}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   jsonb,
   date,
   index,
+  unique,
 } from "drizzle-orm/pg-core";
 
 // ============================================================
@@ -30,37 +31,46 @@ export const users = pgTable("users", {
 // AGENT CREDENTIALS
 // ============================================================
 
-export const agentCredentials = pgTable("agent_credentials", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  agentId: uuid("agent_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" })
-    .unique(),
+export const agentCredentials = pgTable(
+  "agent_credentials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
 
-  // ElevenLabs (required)
-  elevenlabsApiKey: text("elevenlabs_api_key").notNull(),
-  elevenlabsAgentId: text("elevenlabs_agent_id").notNull(),
-  elevenlabsWebhookSecret: text("elevenlabs_webhook_secret"),
+    // Bot label for multi-bot support
+    botLabel: text("bot_label").notNull().default("Default Bot"),
 
-  // Telephony path
-  telephonyProvider: text("telephony_provider", {
-    enum: ["twilio", "didww"],
-  }).notNull(),
+    // ElevenLabs (required)
+    elevenlabsApiKey: text("elevenlabs_api_key").notNull(),
+    elevenlabsAgentId: text("elevenlabs_agent_id").notNull(),
+    elevenlabsWebhookSecret: text("elevenlabs_webhook_secret"),
 
-  // Twilio path
-  elevenlabsPhoneNumberId: text("elevenlabs_phone_number_id"),
+    // Telephony path
+    telephonyProvider: text("telephony_provider", {
+      enum: ["twilio", "didww"],
+    }).notNull(),
 
-  // DIDWW path
-  didwwPhoneNumber: text("didww_phone_number"),
+    // Twilio path
+    elevenlabsPhoneNumberId: text("elevenlabs_phone_number_id"),
 
-  // Caller ID
-  outboundCallerId: text("outbound_caller_id"),
+    // DIDWW path
+    didwwPhoneNumber: text("didww_phone_number"),
 
-  // Tracking
-  credentialsComplete: boolean("credentials_complete").default(false),
-  updatedBy: uuid("updated_by").references(() => users.id),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
+    // Caller ID
+    outboundCallerId: text("outbound_caller_id"),
+
+    // Tracking
+    credentialsComplete: boolean("credentials_complete").default(false),
+    updatedBy: uuid("updated_by").references(() => users.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("idx_agent_credentials_agent").on(table.agentId),
+    unique("uq_agent_bot").on(table.agentId, table.elevenlabsAgentId),
+  ]
+);
 
 // ============================================================
 // BILLING

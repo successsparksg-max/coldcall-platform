@@ -5,11 +5,21 @@ import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import { decrypt } from "@/lib/encryption";
 import { initiateOutboundCall } from "@/lib/elevenlabs";
 
+interface BotCredential {
+  id: string;
+  elevenlabs_api_key: string;
+  elevenlabs_agent_id: string;
+  telephony_provider: "twilio" | "didww";
+  elevenlabs_phone_number_id: string | null;
+  didww_phone_number: string | null;
+  outbound_caller_id: string | null;
+}
+
 export const executeCallList = inngest.createFunction(
   { id: "execute-call-list", retries: 0 },
   { event: "calllist/start" },
   async ({ event, step }) => {
-    const { callListId, agentId } = event.data;
+    const { callListId, agentId, botCredentialIds } = event.data;
 
     const entries = await step.run("fetch-entries", async () => {
       return db
@@ -24,29 +34,49 @@ export const executeCallList = inngest.createFunction(
         .orderBy(asc(callEntries.sortOrder));
     });
 
-    const credentials = await step.run("fetch-credentials", async () => {
-      const [cred] = await db
-        .select()
-        .from(agentCredentials)
-        .where(eq(agentCredentials.agentId, agentId))
-        .limit(1);
+    const allBots = await step.run("fetch-credentials", async () => {
+      // Use botCredentialIds if provided, otherwise fetch all for agent
+      const creds = botCredentialIds?.length
+        ? await db
+            .select()
+            .from(agentCredentials)
+            .where(inArray(agentCredentials.id, botCredentialIds))
+        : await db
+            .select()
+            .from(agentCredentials)
+            .where(
+              and(
+                eq(agentCredentials.agentId, agentId),
+                eq(agentCredentials.credentialsComplete, true)
+              )
+            );
 
-      if (!cred) throw new Error("No credentials found for agent");
+      if (creds.length === 0) throw new Error("No credentials found for agent");
 
-      return {
-        elevenlabs_api_key: decrypt(cred.elevenlabsApiKey),
-        elevenlabs_agent_id: cred.elevenlabsAgentId,
-        telephony_provider: cred.telephonyProvider as "twilio" | "didww",
-        elevenlabs_phone_number_id: cred.elevenlabsPhoneNumberId,
-        didww_phone_number: cred.didwwPhoneNumber,
-        outbound_caller_id: cred.outboundCallerId,
-      };
+      return creds.map(
+        (cred): BotCredential => ({
+          id: cred.id,
+          elevenlabs_api_key: decrypt(cred.elevenlabsApiKey),
+          elevenlabs_agent_id: cred.elevenlabsAgentId,
+          telephony_provider: cred.telephonyProvider as "twilio" | "didww",
+          elevenlabs_phone_number_id: cred.elevenlabsPhoneNumberId,
+          didww_phone_number: cred.didwwPhoneNumber,
+          outbound_caller_id: cred.outboundCallerId,
+        })
+      );
     });
 
-    for (const entry of entries) {
+    const botCount = allBots.length;
+
+    // Process entries in batches of botCount (parallel calling)
+    for (
+      let batchStart = 0;
+      batchStart < entries.length;
+      batchStart += botCount
+    ) {
       // Check if we should continue
       const shouldContinue = await step.run(
-        `check-${entry.id}`,
+        `check-batch-${batchStart}`,
         async () => {
           const [list] = await db
             .select({ callStatus: callLists.callStatus })
@@ -59,81 +89,91 @@ export const executeCallList = inngest.createFunction(
 
       if (!shouldContinue) break;
 
-      // Place call
-      try {
-        await step.run(`place-call-${entry.id}`, async () => {
-          // Mark as calling
-          await db
-            .update(callEntries)
-            .set({ callStatus: "calling", callStartedAt: new Date(), updatedAt: new Date() })
-            .where(eq(callEntries.id, entry.id));
+      const batch = entries.slice(batchStart, batchStart + botCount);
+      const successfulEntryIds: string[] = [];
 
-          const result = await initiateOutboundCall(
-            credentials,
-            entry.phoneNumber
-          );
+      // Place all calls in the batch (each entry gets a different bot)
+      for (let i = 0; i < batch.length; i++) {
+        const entry = batch[i];
+        const bot = allBots[i % botCount];
 
-          // Mark as called
-          await db
-            .update(callEntries)
-            .set({
+        try {
+          await step.run(`place-call-${entry.id}`, async () => {
+            await db
+              .update(callEntries)
+              .set({
+                callStatus: "calling",
+                callStartedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(callEntries.id, entry.id));
+
+            const result = await initiateOutboundCall(
+              bot,
+              entry.phoneNumber
+            );
+
+            await db
+              .update(callEntries)
+              .set({
+                conversationId: result.conversation_id,
+                telephonyCallSid: result.callSid || null,
+                callStatus: "called",
+                updatedAt: new Date(),
+              })
+              .where(eq(callEntries.id, entry.id));
+
+            await db.insert(calls).values({
+              callEntryId: entry.id,
               conversationId: result.conversation_id,
-              telephonyCallSid: result.callSid || null,
-              callStatus: "called",
-              updatedAt: new Date(),
-            })
-            .where(eq(callEntries.id, entry.id));
+              callId: result.callSid || null,
+              callingNumber: bot.outbound_caller_id,
+              phoneNumber: entry.phoneNumber,
+              numberStatus: "busy",
+              elevenlabsAgentId: bot.elevenlabs_agent_id,
+            });
 
-          // Create call record
-          await db.insert(calls).values({
-            callEntryId: entry.id,
-            conversationId: result.conversation_id,
-            callId: result.callSid || null,
-            callingNumber: credentials.outbound_caller_id,
-            phoneNumber: entry.phoneNumber,
-            numberStatus: "busy",
-            elevenlabsAgentId: credentials.elevenlabs_agent_id,
+            await db
+              .update(callLists)
+              .set({ callsMade: sql`${callLists.callsMade} + 1` })
+              .where(eq(callLists.id, callListId));
+
+            return result;
           });
 
-          // Increment calls_made
-          await db
-            .update(callLists)
-            .set({
-              callsMade: sql`${callLists.callsMade} + 1`,
-            })
-            .where(eq(callLists.id, callListId));
+          successfulEntryIds.push(entry.id);
+        } catch {
+          await step.run(`fail-${entry.id}`, async () => {
+            await db
+              .update(callEntries)
+              .set({ callStatus: "failed", updatedAt: new Date() })
+              .where(eq(callEntries.id, entry.id));
 
-          return result;
-        });
+            await db
+              .update(callLists)
+              .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
+              .where(eq(callLists.id, callListId));
+          });
+        }
+      }
 
-        // Wait for webhook or timeout (3m safety net — auto-sync catches stragglers)
-        await step.waitForEvent(`wait-${entry.id}`, {
+      // Wait for all successful calls in the batch to complete
+      for (const entryId of successfulEntryIds) {
+        await step.waitForEvent(`wait-${entryId}`, {
           event: "elevenlabs/call-completed",
           match: "data.conversation_id",
           timeout: "3m",
         });
-      } catch {
-        // Mark entry as failed
-        await step.run(`fail-${entry.id}`, async () => {
-          await db
-            .update(callEntries)
-            .set({ callStatus: "failed", updatedAt: new Date() })
-            .where(eq(callEntries.id, entry.id));
-
-          await db
-            .update(callLists)
-            .set({
-              callsFailed: sql`${callLists.callsFailed} + 1`,
-            })
-            .where(eq(callLists.id, callListId));
-        });
       }
 
-      // Random 10-20s buffer between calls
-      const bufferSecs = await step.run(`buffer-calc-${entry.id}`, async () => {
-        return Math.floor(Math.random() * 11) + 10;
-      });
-      await step.sleep(`buffer-${entry.id}`, `${bufferSecs}s`);
+      // Random 10-20s buffer between batches
+      const bufferSecs = await step.run(
+        `buffer-calc-${batchStart}`,
+        async () => {
+          return Math.floor(Math.random() * 11) + 10;
+        }
+      );
+      await step.sleep(`buffer-${batchStart}`, `${bufferSecs}s`);
     }
 
     // Auto-sync: resolve any entries still stuck as "calling"/"called"
@@ -150,10 +190,24 @@ export const executeCallList = inngest.createFunction(
 
       if (staleEntries.length === 0) return;
 
-      const apiKey = credentials.elevenlabs_api_key;
-
       for (const entry of staleEntries) {
         if (!entry.conversationId) continue;
+
+        // Find the right API key by matching the bot that made this call
+        const [callRecord] = await db
+          .select({ elevenlabsAgentId: calls.elevenlabsAgentId })
+          .from(calls)
+          .where(eq(calls.conversationId, entry.conversationId))
+          .limit(1);
+
+        // Find the bot credential for this call
+        const matchingBot = callRecord
+          ? allBots.find(
+              (b) =>
+                b.elevenlabs_agent_id === callRecord.elevenlabsAgentId
+            )
+          : null;
+        const apiKey = matchingBot?.elevenlabs_api_key || allBots[0].elevenlabs_api_key;
 
         try {
           const res = await fetch(
@@ -206,25 +260,29 @@ export const executeCallList = inngest.createFunction(
             })
             .where(eq(calls.conversationId, entry.conversationId));
 
-          // Update list counters
           if (newEntryStatus === "answered") {
             await db
               .update(callLists)
-              .set({ callsAnswered: sql`${callLists.callsAnswered} + 1` })
+              .set({
+                callsAnswered: sql`${callLists.callsAnswered} + 1`,
+              })
               .where(eq(callLists.id, callListId));
           } else if (newEntryStatus === "no_answer") {
             await db
               .update(callLists)
-              .set({ callsNoAnswer: sql`${callLists.callsNoAnswer} + 1` })
+              .set({
+                callsNoAnswer: sql`${callLists.callsNoAnswer} + 1`,
+              })
               .where(eq(callLists.id, callListId));
           } else {
             await db
               .update(callLists)
-              .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
+              .set({
+                callsFailed: sql`${callLists.callsFailed} + 1`,
+              })
               .where(eq(callLists.id, callListId));
           }
 
-          // Trigger analysis for answered calls
           if (status === "done" && conv.transcript) {
             const transcriptText = (
               Array.isArray(conv.transcript) ? conv.transcript : []

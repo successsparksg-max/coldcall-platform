@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
-import { CredentialForm } from "@/components/CredentialForm";
+import { useEffect, useState, useCallback, use } from "react";
+import { CredentialForm, BotConfig } from "@/components/CredentialForm";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -13,34 +13,47 @@ export default function AdminCredentialPage({
 }) {
   const { id } = use(params);
   const [agentName, setAgentName] = useState("");
-  const [initialData, setInitialData] = useState<{
-    elevenlabsApiKey: string;
-    elevenlabsAgentId: string;
-    elevenlabsWebhookSecret: string | null;
-    telephonyProvider: string;
-    elevenlabsPhoneNumberId: string | null;
-    didwwPhoneNumber: string | null;
-    outboundCallerId: string | null;
-  } | null>(null);
+  const [bots, setBots] = useState<BotConfig[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/admin/agents")
-        .then((r) => r.json())
-        .then((data) => {
-          const agent = (data.data || []).find(
-            (u: { id: string }) => u.id === id
-          );
-          if (agent) setAgentName(agent.name);
-        }),
-      fetch(`/api/credentials/${id}`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.data) setInitialData(data.data);
-        }),
-    ]).finally(() => setLoading(false));
+  const fetchData = useCallback(async () => {
+    try {
+      const [agentsRes, credsRes] = await Promise.all([
+        fetch("/api/admin/agents").then((r) => r.json()),
+        fetch(`/api/credentials/${id}`).then((r) => r.json()),
+      ]);
+
+      const agent = (agentsRes.data || []).find(
+        (u: { id: string }) => u.id === id
+      );
+      if (agent) setAgentName(agent.name);
+
+      const botsData = credsRes.data || [];
+      setBots(
+        (Array.isArray(botsData) ? botsData : [botsData]).filter(Boolean).map(
+          (b: Record<string, string | null>) => ({
+            id: b.id || undefined,
+            botLabel: b.botLabel || "Default Bot",
+            elevenlabsApiKey: "",
+            elevenlabsAgentId: b.elevenlabsAgentId || "",
+            elevenlabsWebhookSecret: "",
+            telephonyProvider: b.telephonyProvider || "didww",
+            elevenlabsPhoneNumberId: b.elevenlabsPhoneNumberId || "",
+            didwwPhoneNumber: b.didwwPhoneNumber || "",
+            outboundCallerId: b.outboundCallerId || "",
+          })
+        )
+      );
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   if (loading) return <p className="text-gray-500">Loading...</p>;
 
@@ -57,7 +70,8 @@ export default function AdminCredentialPage({
       <CredentialForm
         agentId={id}
         agentName={agentName || "Agent"}
-        initialData={initialData}
+        initialBots={bots}
+        onRefresh={fetchData}
       />
     </div>
   );

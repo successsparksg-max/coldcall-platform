@@ -35,12 +35,12 @@ export async function GET() {
           .where(eq(agentBilling.agentId, agent.id))
           .limit(1);
 
-        // Credentials
-        const [cred] = await db
+        // Credentials — count active bots
+        const allBots = await db
           .select({ credentialsComplete: agentCredentials.credentialsComplete })
           .from(agentCredentials)
-          .where(eq(agentCredentials.agentId, agent.id))
-          .limit(1);
+          .where(eq(agentCredentials.agentId, agent.id));
+        const activeBots = allBots.filter((b) => b.credentialsComplete);
 
         // Call stats
         const lists = await db
@@ -83,7 +83,8 @@ export async function GET() {
           ...agent,
           isPaid: billing?.isPaid || false,
           plan: billing?.plan || "basic",
-          credentialsConfigured: cred?.credentialsComplete || false,
+          credentialsConfigured: activeBots.length > 0,
+          botCount: activeBots.length,
           totalLists,
           totalCalls,
           callsAnswered,
