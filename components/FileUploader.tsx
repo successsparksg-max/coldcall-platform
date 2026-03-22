@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Upload, FileSpreadsheet, X, AlertCircle } from "lucide-react";
+import { Upload, FileSpreadsheet, X, AlertCircle, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface FileUploaderProps {
@@ -23,6 +24,8 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
     rows: { row: number; field: string; message: string }[];
   } | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [importingSheet, setImportingSheet] = useState(false);
 
   const handleFile = useCallback((f: File) => {
     setError(null);
@@ -92,6 +95,46 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
     }
   }
 
+  async function handleGoogleSheet() {
+    if (!sheetUrl.trim()) return;
+    setImportingSheet(true);
+    setError(null);
+    setValidationErrors(null);
+
+    try {
+      const res = await fetch("/api/call-lists/import-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: sheetUrl.trim() }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.errors) {
+          setValidationErrors(data.errors);
+        }
+        setError(
+          data.errors?.file ||
+            data.errors?.headers ||
+            data.error ||
+            "Import failed"
+        );
+      } else {
+        setSheetUrl("");
+        onUploadSuccess({
+          callListId: data.callListId,
+          totalEntries: data.totalEntries,
+          warnings: data.warnings || [],
+        });
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setImportingSheet(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card
@@ -151,6 +194,34 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Google Sheet URL import */}
+      <div className="flex items-center gap-2">
+        <div className="h-px flex-1 bg-gray-200" />
+        <span className="text-xs text-gray-400">or import from</span>
+        <div className="h-px flex-1 bg-gray-200" />
+      </div>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Link2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Input
+            placeholder="Paste Google Sheets URL"
+            value={sheetUrl}
+            onChange={(e) => setSheetUrl(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Button
+          onClick={handleGoogleSheet}
+          disabled={importingSheet || !sheetUrl.trim()}
+          variant="outline"
+        >
+          {importingSheet ? "Importing..." : "Import"}
+        </Button>
+      </div>
+      <p className="text-xs text-gray-500">
+        The Google Sheet must be shared as &quot;Anyone with the link can view&quot;. Use the same column headers as the template.
+      </p>
 
       {error && (
         <div className="flex items-start gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700">
