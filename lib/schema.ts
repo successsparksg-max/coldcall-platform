@@ -9,7 +9,6 @@ import {
   jsonb,
   date,
   index,
-  unique,
 } from "drizzle-orm/pg-core";
 
 // ============================================================
@@ -68,7 +67,6 @@ export const agentCredentials = pgTable(
   },
   (table) => [
     index("idx_agent_credentials_agent").on(table.agentId),
-    unique("uq_agent_bot").on(table.agentId, table.elevenlabsAgentId),
   ]
 );
 
