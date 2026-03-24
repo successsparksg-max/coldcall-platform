@@ -90,72 +90,79 @@ export const executeCallList = inngest.createFunction(
       if (!shouldContinue) break;
 
       const batch = entries.slice(batchStart, batchStart + botCount);
-      const successfulEntryIds: string[] = [];
 
-      // Place all calls in the batch (each entry gets a different bot)
-      for (let i = 0; i < batch.length; i++) {
-        const entry = batch[i];
-        const bot = allBots[i % botCount];
+      // Place ALL calls in the batch simultaneously within a single step
+      const batchResults = await step.run(
+        `place-batch-${batchStart}`,
+        async () => {
+          const results: { entryId: string; success: boolean; conversationId?: string }[] = [];
 
-        try {
-          await step.run(`place-call-${entry.id}`, async () => {
-            await db
-              .update(callEntries)
-              .set({
-                callStatus: "calling",
-                callStartedAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .where(eq(callEntries.id, entry.id));
+          // Fire all calls in parallel using Promise.allSettled
+          const callPromises = batch.map(async (entry, i) => {
+            const bot = allBots[i % botCount];
+            try {
+              await db
+                .update(callEntries)
+                .set({
+                  callStatus: "calling",
+                  callStartedAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                .where(eq(callEntries.id, entry.id));
 
-            const result = await initiateOutboundCall(
-              bot,
-              entry.phoneNumber
-            );
+              const result = await initiateOutboundCall(bot, entry.phoneNumber);
 
-            await db
-              .update(callEntries)
-              .set({
+              await db
+                .update(callEntries)
+                .set({
+                  conversationId: result.conversation_id,
+                  telephonyCallSid: result.callSid || null,
+                  callStatus: "called",
+                  updatedAt: new Date(),
+                })
+                .where(eq(callEntries.id, entry.id));
+
+              await db.insert(calls).values({
+                callEntryId: entry.id,
                 conversationId: result.conversation_id,
-                telephonyCallSid: result.callSid || null,
-                callStatus: "called",
-                updatedAt: new Date(),
-              })
-              .where(eq(callEntries.id, entry.id));
+                callId: result.callSid || null,
+                callingNumber: bot.outbound_caller_id,
+                phoneNumber: entry.phoneNumber,
+                numberStatus: "busy",
+                elevenlabsAgentId: bot.elevenlabs_agent_id,
+              });
 
-            await db.insert(calls).values({
-              callEntryId: entry.id,
-              conversationId: result.conversation_id,
-              callId: result.callSid || null,
-              callingNumber: bot.outbound_caller_id,
-              phoneNumber: entry.phoneNumber,
-              numberStatus: "busy",
-              elevenlabsAgentId: bot.elevenlabs_agent_id,
-            });
+              await db
+                .update(callLists)
+                .set({ callsMade: sql`${callLists.callsMade} + 1` })
+                .where(eq(callLists.id, callListId));
 
-            await db
-              .update(callLists)
-              .set({ callsMade: sql`${callLists.callsMade} + 1` })
-              .where(eq(callLists.id, callListId));
-
-            return result;
+              return { entryId: entry.id, success: true, conversationId: result.conversation_id };
+            } catch (err) {
+              console.error(`[batch] Failed to call ${entry.phoneNumber}:`, err);
+              await db
+                .update(callEntries)
+                .set({ callStatus: "failed", updatedAt: new Date() })
+                .where(eq(callEntries.id, entry.id));
+              await db
+                .update(callLists)
+                .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
+                .where(eq(callLists.id, callListId));
+              return { entryId: entry.id, success: false };
+            }
           });
 
-          successfulEntryIds.push(entry.id);
-        } catch {
-          await step.run(`fail-${entry.id}`, async () => {
-            await db
-              .update(callEntries)
-              .set({ callStatus: "failed", updatedAt: new Date() })
-              .where(eq(callEntries.id, entry.id));
-
-            await db
-              .update(callLists)
-              .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
-              .where(eq(callLists.id, callListId));
-          });
+          const settled = await Promise.allSettled(callPromises);
+          for (const r of settled) {
+            if (r.status === "fulfilled") results.push(r.value);
+          }
+          return results;
         }
-      }
+      );
+
+      const successfulEntryIds = batchResults
+        .filter((r) => r.success)
+        .map((r) => r.entryId);
 
       // Wait for all successful calls in the batch to complete
       for (const entryId of successfulEntryIds) {
