@@ -39,9 +39,8 @@ export default function AdminCredentialsPage() {
             try {
               const res = await fetch(`/api/credentials/${agent.id}`);
               const cred = await res.json();
-              statuses[agent.id] = !!(
-                cred.data && cred.data.credentialsComplete
-              );
+              const bots = Array.isArray(cred.data) ? cred.data : [];
+              statuses[agent.id] = bots.some((b: { credentialsComplete?: boolean }) => b.credentialsComplete);
             } catch {
               statuses[agent.id] = false;
             }
