@@ -111,6 +111,10 @@ export default function DashboardPage() {
                 (s, l) => s + (l.callsAnswered || 0),
                 0
               );
+              const botNoAnswer = botLists.reduce(
+                (s, l) => s + (l.callsNoAnswer || 0),
+                0
+              );
               return (
                 <button
                   key={bot.id}
@@ -129,7 +133,8 @@ export default function DashboardPage() {
                   </div>
                   <div className="mt-2 flex gap-4 text-xs text-gray-500">
                     <span>{botLists.length} lists</span>
-                    <span>{botAnswered} answered</span>
+                    <span className="text-green-600">{botAnswered} answered</span>
+                    <span className="text-red-500">{botNoAnswer} no answer</span>
                   </div>
                 </button>
               );
