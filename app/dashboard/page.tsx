@@ -5,7 +5,6 @@ import Link from "next/link";
 import { AgentStatsCard } from "@/components/AgentStatsCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -71,8 +70,6 @@ export default function DashboardPage() {
     0
   );
 
-  const botLabelMap = new Map(bots.map((b) => [b.id, b.botLabel]));
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -101,30 +98,73 @@ export default function DashboardPage() {
       </div>
 
       {/* Bot tabs */}
-      {bots.length > 1 && (
-        <Tabs value={selectedBot} onValueChange={setSelectedBot}>
-          <TabsList>
+      {bots.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-lg font-semibold">Agent Bots</h2>
+          <div className="flex gap-3">
             {bots.map((bot) => {
-              const count = lists.filter(
+              const botLists = lists.filter(
                 (l) => l.botCredentialId === bot.id
-              ).length;
+              );
+              const isActive = selectedBot === bot.id;
+              const botAnswered = botLists.reduce(
+                (s, l) => s + (l.callsAnswered || 0),
+                0
+              );
               return (
-                <TabsTrigger key={bot.id} value={bot.id}>
-                  {bot.botLabel} ({count})
-                </TabsTrigger>
+                <button
+                  key={bot.id}
+                  onClick={() => setSelectedBot(bot.id)}
+                  className={`flex-1 rounded-lg border-2 p-4 text-left transition-all ${
+                    isActive
+                      ? "border-blue-500 bg-blue-50 shadow-sm"
+                      : "border-gray-200 bg-white hover:border-gray-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Phone className={`h-4 w-4 ${isActive ? "text-blue-600" : "text-gray-400"}`} />
+                    <span className={`font-semibold ${isActive ? "text-blue-700" : "text-gray-700"}`}>
+                      {bot.botLabel}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex gap-4 text-xs text-gray-500">
+                    <span>{botLists.length} lists</span>
+                    <span>{botAnswered} answered</span>
+                  </div>
+                </button>
               );
             })}
             {lists.some((l) => !l.botCredentialId) && (
-              <TabsTrigger value="unassigned">
-                Unassigned ({lists.filter((l) => !l.botCredentialId).length})
-              </TabsTrigger>
+              <button
+                onClick={() => setSelectedBot("unassigned")}
+                className={`flex-1 rounded-lg border-2 p-4 text-left transition-all ${
+                  selectedBot === "unassigned"
+                    ? "border-yellow-500 bg-yellow-50 shadow-sm"
+                    : "border-gray-200 bg-white hover:border-gray-300"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-yellow-500" />
+                  <span className="font-semibold text-gray-700">Unassigned</span>
+                </div>
+                <div className="mt-2 text-xs text-gray-500">
+                  {lists.filter((l) => !l.botCredentialId).length} lists
+                </div>
+              </button>
             )}
-          </TabsList>
-        </Tabs>
+          </div>
+        </div>
       )}
 
       <div>
-        <h2 className="mb-3 text-lg font-semibold">Call Lists</h2>
+        <h2 className="mb-3 text-lg font-semibold">
+          Call Lists
+          {bots.length > 1 && selectedBot && selectedBot !== "unassigned" && (
+            <span className="ml-2 text-base font-normal text-gray-500">
+              — {bots.find((b) => b.id === selectedBot)?.botLabel}
+            </span>
+          )}
+        </h2>
         {loading ? (
           <p className="text-gray-500">Loading...</p>
         ) : visibleLists.length === 0 ? (
@@ -136,7 +176,6 @@ export default function DashboardPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>File</TableHead>
-                {bots.length > 1 && <TableHead>Bot</TableHead>}
                 <TableHead>Status</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Made</TableHead>
@@ -151,13 +190,6 @@ export default function DashboardPage() {
                   <TableCell className="font-medium">
                     {list.originalFilename}
                   </TableCell>
-                  {bots.length > 1 && (
-                    <TableCell className="text-sm text-gray-500">
-                      {list.botCredentialId
-                        ? botLabelMap.get(list.botCredentialId) || "—"
-                        : "—"}
-                    </TableCell>
-                  )}
                   <TableCell>
                     <StatusBadge status={list.callStatus} />
                   </TableCell>
