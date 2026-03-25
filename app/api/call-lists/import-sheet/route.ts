@@ -10,6 +10,7 @@ import { z } from "zod/v4";
 
 const importSchema = z.object({
   url: z.string().min(1),
+  botCredentialId: z.string().optional(),
 });
 
 /**
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
       return apiError("Invalid input", 422);
     }
 
-    const { url } = parsed.data;
+    const { url, botCredentialId } = parsed.data;
 
     const sheetId = extractSheetId(url);
     if (!sheetId) {
@@ -114,6 +115,7 @@ export async function POST(req: NextRequest) {
         parseStatus: "parsed",
         callStatus: "ready",
         totalNumbers: result.entries.length,
+        botCredentialId: botCredentialId || null,
       })
       .returning();
 

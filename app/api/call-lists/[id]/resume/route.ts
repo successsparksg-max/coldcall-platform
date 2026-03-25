@@ -35,10 +35,16 @@ export async function POST(
       .set({ callStatus: "in_progress" })
       .where(eq(callLists.id, id));
 
-    // Re-trigger Inngest for remaining entries
+    // Re-trigger Inngest with the assigned bot
     await inngest.send({
       name: "calllist/start",
-      data: { callListId: id, agentId: list.agentId },
+      data: {
+        callListId: id,
+        agentId: list.agentId,
+        botCredentialIds: list.botCredentialId
+          ? [list.botCredentialId]
+          : undefined,
+      },
     });
 
     return apiSuccess({ message: "Call list resumed" });

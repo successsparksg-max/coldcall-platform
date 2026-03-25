@@ -12,9 +12,11 @@ interface FileUploaderProps {
     totalEntries: number;
     warnings: { type: string; message: string }[];
   }) => void;
+  botCredentialId?: string | null;
+  disabled?: boolean;
 }
 
-export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
+export function FileUploader({ onUploadSuccess, botCredentialId, disabled }: FileUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      if (botCredentialId) formData.append("botCredentialId", botCredentialId);
 
       const res = await fetch("/api/call-lists/upload", {
         method: "POST",
@@ -105,7 +108,7 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
       const res = await fetch("/api/call-lists/import-sheet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: sheetUrl.trim() }),
+        body: JSON.stringify({ url: sheetUrl.trim(), botCredentialId }),
       });
 
       const data = await res.json();
@@ -213,7 +216,7 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
         </div>
         <Button
           onClick={handleGoogleSheet}
-          disabled={importingSheet || !sheetUrl.trim()}
+          disabled={importingSheet || !sheetUrl.trim() || !!disabled}
           variant="outline"
         >
           {importingSheet ? "Importing..." : "Import"}
@@ -251,7 +254,7 @@ export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
       {file && (
         <Button
           onClick={handleUpload}
-          disabled={uploading}
+          disabled={uploading || !!disabled}
           className="w-full"
         >
           {uploading ? "Uploading..." : "Upload & Validate"}

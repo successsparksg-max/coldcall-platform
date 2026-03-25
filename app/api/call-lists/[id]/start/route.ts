@@ -30,19 +30,40 @@ export async function POST(
       return apiError("Call list is not in ready state", 400);
     }
 
-    // Check credentials — fetch all active bots
-    const bots = await db
+    // Use the assigned bot, or fall back to first available
+    let botId = list.botCredentialId;
+    if (!botId) {
+      const [firstBot] = await db
+        .select({ id: agentCredentials.id })
+        .from(agentCredentials)
+        .where(
+          and(
+            eq(agentCredentials.agentId, list.agentId),
+            eq(agentCredentials.credentialsComplete, true)
+          )
+        )
+        .limit(1);
+      botId = firstBot?.id || null;
+    }
+
+    if (!botId) {
+      return apiError("No agent bot configured for this list", 400);
+    }
+
+    // Verify the bot credential exists and is complete
+    const [bot] = await db
       .select()
       .from(agentCredentials)
       .where(
         and(
-          eq(agentCredentials.agentId, list.agentId),
+          eq(agentCredentials.id, botId),
           eq(agentCredentials.credentialsComplete, true)
         )
-      );
+      )
+      .limit(1);
 
-    if (bots.length === 0) {
-      return apiError("Agent credentials not configured", 400);
+    if (!bot) {
+      return apiError("Assigned bot credentials not found or incomplete", 400);
     }
 
     // Update status
@@ -51,19 +72,17 @@ export async function POST(
       .set({ callStatus: "in_progress", startedAt: new Date() })
       .where(eq(callLists.id, id));
 
-    // Trigger Inngest with all bot IDs for parallel calling
+    // Trigger Inngest with the single assigned bot
     await inngest.send({
       name: "calllist/start",
       data: {
         callListId: id,
         agentId: list.agentId,
-        botCredentialIds: bots.map((b) => b.id),
+        botCredentialIds: [bot.id],
       },
     });
 
-    return apiSuccess({
-      message: `Call list started with ${bots.length} bot(s)`,
-    });
+    return apiSuccess({ message: "Call list started" });
   } catch (error) {
     return handleAuthError(error);
   }

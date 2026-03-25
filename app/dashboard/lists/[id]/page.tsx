@@ -256,6 +256,11 @@ export default function CallListDetailPage({
         </Link>
         <div className="flex-1">
           <h1 className="text-xl font-bold">{list.originalFilename}</h1>
+          {(list as CallList & { botLabel?: string }).botLabel && (
+            <span className="text-sm text-gray-500">
+              Bot: {(list as CallList & { botLabel?: string }).botLabel}
+            </span>
+          )}
           <div className="flex items-center gap-2 mt-1">
             <StatusBadge status={list.callStatus} />
             <span className="text-sm text-gray-500">

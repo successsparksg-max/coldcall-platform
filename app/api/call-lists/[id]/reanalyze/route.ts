@@ -29,12 +29,18 @@ export async function POST(
 
     if (!list) return apiError("Call list not found", 404);
 
-    // Get agent's credentials
-    const [creds] = await db
-      .select()
-      .from(agentCredentials)
-      .where(eq(agentCredentials.agentId, list.agentId))
-      .limit(1);
+    // Get the assigned bot's credentials (or fall back to first bot)
+    const [creds] = list.botCredentialId
+      ? await db
+          .select()
+          .from(agentCredentials)
+          .where(eq(agentCredentials.id, list.botCredentialId))
+          .limit(1)
+      : await db
+          .select()
+          .from(agentCredentials)
+          .where(eq(agentCredentials.agentId, list.agentId))
+          .limit(1);
 
     if (!creds) {
       return apiError("Agent credentials not configured", 400);

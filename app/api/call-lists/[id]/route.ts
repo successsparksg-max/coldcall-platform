@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { callLists, callEntries, calls } from "@/lib/schema";
+import { callLists, callEntries, calls, agentCredentials } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
 import { eq, and, asc } from "drizzle-orm";
@@ -25,6 +25,17 @@ export async function GET(
       .limit(1);
 
     if (!list) return apiError("Call list not found", 404);
+
+    // Get bot label
+    let botLabel: string | null = null;
+    if (list.botCredentialId) {
+      const [bot] = await db
+        .select({ botLabel: agentCredentials.botLabel })
+        .from(agentCredentials)
+        .where(eq(agentCredentials.id, list.botCredentialId))
+        .limit(1);
+      botLabel = bot?.botLabel ?? null;
+    }
 
     // Get entries with analysis data
     const entries = await db
@@ -75,7 +86,7 @@ export async function GET(
         : null,
     }));
 
-    return apiSuccess({ list, entries: enrichedEntries });
+    return apiSuccess({ list: { ...list, botLabel }, entries: enrichedEntries });
   } catch (error) {
     return handleAuthError(error);
   }

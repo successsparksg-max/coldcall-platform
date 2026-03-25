@@ -35,6 +35,8 @@ export async function POST(req: NextRequest) {
       return apiError("File size exceeds 10MB limit", 422);
     }
 
+    const botCredentialId = formData.get("botCredentialId") as string | null;
+
     const buffer = await file.arrayBuffer();
     const fileHash = crypto
       .createHash("sha256")
@@ -77,6 +79,7 @@ export async function POST(req: NextRequest) {
         parseStatus: "parsed",
         callStatus: "ready",
         totalNumbers: result.entries.length,
+        botCredentialId: botCredentialId || null,
       })
       .returning();
 

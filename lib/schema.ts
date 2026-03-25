@@ -109,6 +109,11 @@ export const callLists = pgTable(
       .default("parsed"),
     validationErrors: jsonb("validation_errors"),
 
+    botCredentialId: uuid("bot_credential_id").references(
+      () => agentCredentials.id,
+      { onDelete: "set null" }
+    ),
+
     callStatus: text("call_status", {
       enum: ["ready", "in_progress", "paused", "completed", "cancelled"],
     })
