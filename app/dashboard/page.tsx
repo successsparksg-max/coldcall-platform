@@ -31,7 +31,7 @@ interface Bot {
 export default function DashboardPage() {
   const [lists, setLists] = useState<CallList[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
-  const [selectedBot, setSelectedBot] = useState("all");
+  const [selectedBot, setSelectedBot] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,16 +41,22 @@ export default function DashboardPage() {
         .then((data) => setLists(data.data || [])),
       fetch("/api/my-bots")
         .then((res) => res.json())
-        .then((data) => setBots(data.data || [])),
+        .then((data) => {
+          const botList = data.data || [];
+          setBots(botList);
+          if (botList.length > 0 && !selectedBot) {
+            setSelectedBot(botList[0].id);
+          }
+        }),
     ]).finally(() => setLoading(false));
   }, []);
 
   const visibleLists =
-    selectedBot === "all"
-      ? lists
-      : selectedBot === "unassigned"
-        ? lists.filter((l) => !l.botCredentialId)
-        : lists.filter((l) => l.botCredentialId === selectedBot);
+    selectedBot === "unassigned"
+      ? lists.filter((l) => !l.botCredentialId)
+      : selectedBot
+        ? lists.filter((l) => l.botCredentialId === selectedBot)
+        : lists;
 
   const totalCalls = visibleLists.reduce(
     (sum, l) => sum + (l.callsMade || 0),
@@ -98,7 +104,6 @@ export default function DashboardPage() {
       {bots.length > 1 && (
         <Tabs value={selectedBot} onValueChange={setSelectedBot}>
           <TabsList>
-            <TabsTrigger value="all">All ({lists.length})</TabsTrigger>
             {bots.map((bot) => {
               const count = lists.filter(
                 (l) => l.botCredentialId === bot.id
@@ -124,9 +129,7 @@ export default function DashboardPage() {
           <p className="text-gray-500">Loading...</p>
         ) : visibleLists.length === 0 ? (
           <p className="text-gray-500">
-            {selectedBot === "all"
-              ? "No call lists yet. Upload your first list to get started."
-              : "No call lists for this bot."}
+            No call lists yet. Upload your first list to get started.
           </p>
         ) : (
           <Table>
