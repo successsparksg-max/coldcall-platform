@@ -173,11 +173,11 @@ export const executeCallList = inngest.createFunction(
         });
       }
 
-      // Random 10-15s buffer between batches
+      // Random 60-90s buffer between batches
       const bufferSecs = await step.run(
         `buffer-calc-${batchStart}`,
         async () => {
-          return Math.floor(Math.random() * 6) + 10;
+          return Math.floor(Math.random() * 31) + 60;
         }
       );
       await step.sleep(`buffer-${batchStart}`, `${bufferSecs}s`);
