@@ -64,6 +64,23 @@ export default function CallListDetailPage({
     fetchData();
   }, [fetchData]);
 
+  // Auto-fix stuck "in_progress" lists with no active entries
+  useEffect(() => {
+    if (!list || list.callStatus !== "in_progress") return;
+    const hasActive = entries.some(
+      (e) =>
+        e.callStatus === "calling" ||
+        e.callStatus === "called" ||
+        e.callStatus === "pending"
+    );
+    if (!hasActive && entries.length > 0) {
+      // No entries left to call — mark as completed
+      fetch(`/api/call-lists/${id}/complete`, { method: "POST" })
+        .then(() => fetchData())
+        .catch(() => {});
+    }
+  }, [list, entries, id, fetchData]);
+
   // Update browser tab title with real-time status
   useEffect(() => {
     if (!list) return;
