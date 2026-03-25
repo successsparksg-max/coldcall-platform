@@ -191,7 +191,15 @@ export default function DashboardPage() {
                     {list.originalFilename}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={list.callStatus} />
+                    {list.callStatus === "completed" &&
+                    (list.totalNumbers || 0) > 0 &&
+                    (list.callsAnswered || 0) < (list.totalNumbers || 0) ? (
+                      <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-700">
+                        Partial
+                      </span>
+                    ) : (
+                      <StatusBadge status={list.callStatus} />
+                    )}
                   </TableCell>
                   <TableCell>{list.totalNumbers}</TableCell>
                   <TableCell>{list.callsMade}</TableCell>
