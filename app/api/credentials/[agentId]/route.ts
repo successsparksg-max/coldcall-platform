@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { agentCredentials } from "@/lib/schema";
+import { agentCredentials, callLists } from "@/lib/schema";
 import { requireRole, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
 import { encrypt, decrypt, maskCredential } from "@/lib/encryption";
@@ -213,6 +213,34 @@ export async function DELETE(
     const { botId } = await req.json();
 
     if (!botId) return apiError("botId is required", 422);
+
+    // Get remaining bots (excluding the one being deleted)
+    const remainingBots = await db
+      .select({ id: agentCredentials.id })
+      .from(agentCredentials)
+      .where(
+        and(
+          eq(agentCredentials.agentId, agentId),
+          eq(agentCredentials.credentialsComplete, true)
+        )
+      );
+    const otherBots = remainingBots.filter((b) => b.id !== botId);
+
+    // Redistribute the deleted bot's lists to remaining bots
+    if (otherBots.length > 0) {
+      const orphanedLists = await db
+        .select({ id: callLists.id })
+        .from(callLists)
+        .where(eq(callLists.botCredentialId, botId));
+
+      for (let i = 0; i < orphanedLists.length; i++) {
+        const newBot = otherBots[i % otherBots.length];
+        await db
+          .update(callLists)
+          .set({ botCredentialId: newBot.id })
+          .where(eq(callLists.id, orphanedLists[i].id));
+      }
+    }
 
     await db
       .delete(agentCredentials)
