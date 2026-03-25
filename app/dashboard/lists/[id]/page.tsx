@@ -64,6 +64,37 @@ export default function CallListDetailPage({
     fetchData();
   }, [fetchData]);
 
+  // Update browser tab title with real-time status
+  useEffect(() => {
+    if (!list) return;
+    const botName = (list as CallList & { botLabel?: string }).botLabel || "";
+    const prefix = botName ? `${botName} | ` : "";
+    const made = list.callsMade || 0;
+    const total = list.totalNumbers || 0;
+    const answered = list.callsAnswered || 0;
+
+    if (list.callStatus === "in_progress") {
+      const calling = entries.find((e) => e.callStatus === "calling");
+      if (calling) {
+        document.title = `${prefix}Calling ${calling.contactName}... (${made}/${total})`;
+      } else {
+        document.title = `${prefix}In Progress ${made}/${total}`;
+      }
+    } else if (list.callStatus === "paused") {
+      document.title = `${prefix}Paused ${made}/${total}`;
+    } else if (list.callStatus === "completed") {
+      document.title = `${prefix}Done — ${answered}/${total} answered`;
+    } else if (list.callStatus === "ready") {
+      document.title = `${prefix}Ready — ${total} contacts`;
+    } else {
+      document.title = `${prefix}${list.originalFilename}`;
+    }
+
+    return () => {
+      document.title = "Cold Call Platform";
+    };
+  }, [list, entries]);
+
   // Poll during active calls
   const callStatus = list?.callStatus;
   useEffect(() => {
