@@ -202,7 +202,7 @@ export default function DashboardPage() {
                       : "-"}
                   </TableCell>
                   <TableCell>
-                    <Link href={`/dashboard/lists/${list.id}`}>
+                    <Link href={`/dashboard/lists/${list.id}`} target="_blank">
                       <Button variant="outline" size="sm">
                         View
                       </Button>
