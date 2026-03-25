@@ -86,21 +86,22 @@ export default function CallListDetailPage({
     if (!list) return;
     const botName = (list as CallList & { botLabel?: string }).botLabel || "";
     const prefix = botName ? `${botName} | ` : "";
-    const made = list.callsMade || 0;
     const total = list.totalNumbers || 0;
     const answered = list.callsAnswered || 0;
+    const noAnswer = list.callsNoAnswer || 0;
+    const stats = `${answered} ans, ${noAnswer} no ans`;
 
     if (list.callStatus === "in_progress") {
       const calling = entries.find((e) => e.callStatus === "calling");
       if (calling) {
-        document.title = `${prefix}Calling ${calling.contactName}... (${made}/${total})`;
+        document.title = `${prefix}Calling ${calling.contactName}... | ${stats}`;
       } else {
-        document.title = `${prefix}In Progress ${made}/${total}`;
+        document.title = `${prefix}In Progress | ${stats}`;
       }
     } else if (list.callStatus === "paused") {
-      document.title = `${prefix}Paused ${made}/${total}`;
+      document.title = `${prefix}Paused | ${stats}`;
     } else if (list.callStatus === "completed") {
-      document.title = `${prefix}Done — ${answered}/${total} answered`;
+      document.title = `${prefix}Done — ${stats} / ${total}`;
     } else if (list.callStatus === "ready") {
       document.title = `${prefix}Ready — ${total} contacts`;
     } else {
