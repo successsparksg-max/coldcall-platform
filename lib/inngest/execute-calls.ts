@@ -160,15 +160,15 @@ export const executeCallList = inngest.createFunction(
         }
       );
 
-      const successfulEntryIds = batchResults
-        .filter((r) => r.success)
-        .map((r) => r.entryId);
+      const successfulCalls = batchResults.filter(
+        (r) => r.success && r.conversationId
+      );
 
       // Wait for all successful calls in the batch to complete
-      for (const entryId of successfulEntryIds) {
-        await step.waitForEvent(`wait-${entryId}`, {
+      for (const call of successfulCalls) {
+        await step.waitForEvent(`wait-${call.entryId}`, {
           event: "elevenlabs/call-completed",
-          match: "data.conversation_id",
+          if: `async.data.conversation_id == '${call.conversationId}'`,
           timeout: "3m",
         });
       }
