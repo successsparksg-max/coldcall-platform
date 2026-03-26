@@ -1,5 +1,5 @@
 import { inngest } from "./client";
-import { db } from "@/lib/db";
+import { db, withRetry } from "@/lib/db";
 import { calls, callEntries, callLists } from "@/lib/schema";
 import { eq, sql } from "drizzle-orm";
 import { ANALYSIS_PROMPT } from "@/lib/analysis-prompt";
@@ -83,7 +83,7 @@ export const analyzeCallTranscript = inngest.createFunction(
     });
 
     await step.run("store-analysis", async () => {
-      await db
+      await withRetry(() => db
         .update(calls)
         .set({
           rating: cleaned.is_voicemail ? 1 : cleaned.rating,
@@ -100,7 +100,9 @@ export const analyzeCallTranscript = inngest.createFunction(
           transcript: transcriptText,
           recordingUrl: recordingUrl,
         })
-        .where(eq(calls.conversationId, conversationId));
+        .where(eq(calls.conversationId, conversationId)),
+        { label: "store-analysis" }
+      );
 
       // If voicemail detected, reclassify the call entry as no_answer
       if (cleaned.is_voicemail) {

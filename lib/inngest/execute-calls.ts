@@ -1,5 +1,5 @@
 import { inngest } from "./client";
-import { db } from "@/lib/db";
+import { db, withRetry } from "@/lib/db";
 import { callLists, callEntries, calls, agentCredentials } from "@/lib/schema";
 import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import { decrypt } from "@/lib/encryption";
@@ -16,7 +16,7 @@ interface BotCredential {
 }
 
 export const executeCallList = inngest.createFunction(
-  { id: "execute-call-list", retries: 0 },
+  { id: "execute-call-list", retries: 3 },
   { event: "calllist/start" },
   async ({ event, step }) => {
     const { callListId, agentId, botCredentialIds } = event.data;
@@ -101,53 +101,81 @@ export const executeCallList = inngest.createFunction(
           const callPromises = batch.map(async (entry, i) => {
             const bot = allBots[i % botCount];
             try {
-              await db
-                .update(callEntries)
-                .set({
-                  callStatus: "calling",
-                  callStartedAt: new Date(),
-                  updatedAt: new Date(),
-                })
-                .where(eq(callEntries.id, entry.id));
+              await withRetry(
+                () =>
+                  db
+                    .update(callEntries)
+                    .set({
+                      callStatus: "calling",
+                      callStartedAt: new Date(),
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(callEntries.id, entry.id)),
+                { label: "mark-calling" }
+              );
 
               const result = await initiateOutboundCall(bot, entry.phoneNumber);
 
-              await db
-                .update(callEntries)
-                .set({
-                  conversationId: result.conversation_id,
-                  telephonyCallSid: result.callSid || null,
-                  callStatus: "called",
-                  updatedAt: new Date(),
-                })
-                .where(eq(callEntries.id, entry.id));
+              await withRetry(
+                () =>
+                  db
+                    .update(callEntries)
+                    .set({
+                      conversationId: result.conversation_id,
+                      telephonyCallSid: result.callSid || null,
+                      callStatus: "called",
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(callEntries.id, entry.id)),
+                { label: "mark-called" }
+              );
 
-              await db.insert(calls).values({
-                callEntryId: entry.id,
-                conversationId: result.conversation_id,
-                callId: result.callSid || null,
-                callingNumber: bot.outbound_caller_id,
-                phoneNumber: entry.phoneNumber,
-                numberStatus: "busy",
-                elevenlabsAgentId: bot.elevenlabs_agent_id,
-              });
+              await withRetry(
+                () =>
+                  db.insert(calls).values({
+                    callEntryId: entry.id,
+                    conversationId: result.conversation_id,
+                    callId: result.callSid || null,
+                    callingNumber: bot.outbound_caller_id,
+                    phoneNumber: entry.phoneNumber,
+                    numberStatus: "busy",
+                    elevenlabsAgentId: bot.elevenlabs_agent_id,
+                  }),
+                { label: "insert-call" }
+              );
 
-              await db
-                .update(callLists)
-                .set({ callsMade: sql`${callLists.callsMade} + 1` })
-                .where(eq(callLists.id, callListId));
+              await withRetry(
+                () =>
+                  db
+                    .update(callLists)
+                    .set({ callsMade: sql`${callLists.callsMade} + 1` })
+                    .where(eq(callLists.id, callListId)),
+                { label: "increment-made" }
+              );
 
               return { entryId: entry.id, success: true, conversationId: result.conversation_id };
             } catch (err) {
               console.error(`[batch] Failed to call ${entry.phoneNumber}:`, err);
-              await db
-                .update(callEntries)
-                .set({ callStatus: "failed", updatedAt: new Date() })
-                .where(eq(callEntries.id, entry.id));
-              await db
-                .update(callLists)
-                .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
-                .where(eq(callLists.id, callListId));
+              try {
+                await withRetry(
+                  () =>
+                    db
+                      .update(callEntries)
+                      .set({ callStatus: "failed", updatedAt: new Date() })
+                      .where(eq(callEntries.id, entry.id)),
+                  { label: "mark-failed" }
+                );
+                await withRetry(
+                  () =>
+                    db
+                      .update(callLists)
+                      .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
+                      .where(eq(callLists.id, callListId)),
+                  { label: "increment-failed" }
+                );
+              } catch (dbErr) {
+                console.error(`[batch] DB error marking failure:`, dbErr);
+              }
               return { entryId: entry.id, success: false };
             }
           });

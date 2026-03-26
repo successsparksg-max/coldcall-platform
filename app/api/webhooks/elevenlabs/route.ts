@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, withRetry } from "@/lib/db";
 import { callEntries, calls, callLists, agentCredentials } from "@/lib/schema";
 import { inngest } from "@/lib/inngest/client";
 import { decrypt } from "@/lib/encryption";
@@ -65,32 +65,44 @@ export async function POST(req: NextRequest) {
     const newEntryStatus = status === "done" ? "answered" : "failed";
     const durationSecs = data.metadata?.call_duration_secs || 0;
 
-    await db
-      .update(callEntries)
-      .set({
-        callStatus: newEntryStatus,
-        callDurationSeconds: durationSecs,
-        callEndedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(callEntries.conversationId, conversationId));
+    await withRetry(
+      () =>
+        db
+          .update(callEntries)
+          .set({
+            callStatus: newEntryStatus,
+            callDurationSeconds: durationSecs,
+            callEndedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(callEntries.conversationId, conversationId)),
+      { label: "webhook-update-entry" }
+    );
 
     // 2. Update calls table
-    await db
-      .update(calls)
-      .set({
-        numberStatus: "idle",
-        duration: durationSecs,
-        callCost: data.metadata?.cost?.toString() || null,
-      })
-      .where(eq(calls.conversationId, conversationId));
+    await withRetry(
+      () =>
+        db
+          .update(calls)
+          .set({
+            numberStatus: "idle",
+            duration: durationSecs,
+            callCost: data.metadata?.cost?.toString() || null,
+          })
+          .where(eq(calls.conversationId, conversationId)),
+      { label: "webhook-update-call" }
+    );
 
     // 3. Update call list counters - find the list from entry
-    const [entry] = await db
-      .select({ callListId: callEntries.callListId })
-      .from(callEntries)
-      .where(eq(callEntries.conversationId, conversationId))
-      .limit(1);
+    const [entry] = await withRetry(
+      () =>
+        db
+          .select({ callListId: callEntries.callListId })
+          .from(callEntries)
+          .where(eq(callEntries.conversationId, conversationId))
+          .limit(1),
+      { label: "webhook-find-entry" }
+    );
 
     if (entry) {
       if (newEntryStatus === "answered") {
@@ -141,16 +153,20 @@ export async function POST(req: NextRequest) {
       console.log(`[webhook] Sending analyze-transcript event, transcript length: ${transcriptText.length}`);
 
       try {
-        await inngest.send({
-          name: "call/analyze-transcript",
-          data: {
-            conversationId,
-            transcriptText,
-            callDurationSecs: durationSecs,
-            cost: data.metadata?.cost || 0,
-            recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
-          },
-        });
+        await withRetry(
+          () =>
+            inngest.send({
+              name: "call/analyze-transcript",
+              data: {
+                conversationId,
+                transcriptText,
+                callDurationSecs: durationSecs,
+                cost: data.metadata?.cost || 0,
+                recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
+              },
+            }),
+          { retries: 2, label: "webhook-send-analyze" }
+        );
         console.log("[webhook] analyze-transcript event sent successfully");
       } catch (inngestErr) {
         console.error("[webhook] Failed to send analyze-transcript event:", inngestErr);
@@ -161,10 +177,14 @@ export async function POST(req: NextRequest) {
 
     // 5. Unblock the call execution loop
     try {
-      await inngest.send({
-        name: "elevenlabs/call-completed",
-        data: { conversation_id: conversationId },
-      });
+      await withRetry(
+        () =>
+          inngest.send({
+            name: "elevenlabs/call-completed",
+            data: { conversation_id: conversationId },
+          }),
+        { retries: 2, label: "webhook-send-completed" }
+      );
       console.log("[webhook] call-completed event sent");
     } catch (inngestErr) {
       console.error("[webhook] Failed to send call-completed event:", inngestErr);

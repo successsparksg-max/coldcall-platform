@@ -55,14 +55,28 @@ export async function initiateOutboundCall(
     };
   }
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "xi-api-key": credentials.elevenlabs_api_key,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "xi-api-key": credentials.elevenlabs_api_key,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("ElevenLabs call timed out after 30s");
+    }
+    throw err;
+  }
+  clearTimeout(timeout);
 
   if (!response.ok) {
     const error = await response.text();
