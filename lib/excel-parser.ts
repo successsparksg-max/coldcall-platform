@@ -45,6 +45,7 @@ const FIELD_KEYS: Record<string, string> = {
 const HEADER_ALIASES: Record<string, string> = {
   "phone number": "phone_number",
   "phone": "phone_number",
+  "number": "phone_number",
   "contact name": "contact_name",
   "name": "contact_name",
   "company": "company",
@@ -93,11 +94,11 @@ export function parseExcel(buffer: ArrayBuffer): ParseResult {
     { header: 1, defval: null }
   );
 
-  if (rawData.length < 2) {
+  if (rawData.length < 1) {
     return {
       success: false,
       entries: [],
-      errors: { ...errors, headers: "File has no data rows" },
+      errors: { ...errors, headers: "File has no data" },
       warnings,
       summary: { totalRows: 0, validRows: 0, errorRows: 0 },
     };
@@ -132,7 +133,21 @@ export function parseExcel(buffer: ArrayBuffer): ParseResult {
     }
   }
 
-  // Validate required columns
+  // If still no phone_number column found, check if first column looks like phone numbers
+  // (supports plain list of numbers with no header)
+  let singleColumnMode = false;
+  if (columnMap["phone_number"] === undefined) {
+    const firstVal = rawData[0]?.[0];
+    if (firstVal) {
+      const cleaned = String(firstVal).replace(/[\s\-\(\)\.]/g, "");
+      if (/^\+?\d{7,15}$/.test(cleaned)) {
+        // First cell looks like a phone number — treat column 0 as phone numbers
+        columnMap["phone_number"] = 0;
+        singleColumnMode = true;
+      }
+    }
+  }
+
   if (columnMap["phone_number"] === undefined) {
     return {
       success: false,
@@ -145,30 +160,19 @@ export function parseExcel(buffer: ArrayBuffer): ParseResult {
       summary: { totalRows: 0, validRows: 0, errorRows: 0 },
     };
   }
-  if (columnMap["contact_name"] === undefined) {
-    return {
-      success: false,
-      entries: [],
-      errors: {
-        ...errors,
-        headers: "Missing required column: Contact Name",
-      },
-      warnings,
-      summary: { totalRows: 0, validRows: 0, errorRows: 0 },
-    };
-  }
 
-  // Parse data rows (start from row 3 = index 2, skipping header and field key rows)
+  // Parse data rows
   const entries: ParsedEntry[] = [];
   const phonesSeen = new Set<string>();
-  let startRow = 2;
 
-  // Check if row 2 is actually a field key row or data
-  const row2HasFieldKeys = Object.keys(columnMap).length > 0 &&
-    rawData[1] &&
-    rawData[1].some((v) => v && FIELD_KEYS[String(v).trim().toLowerCase()]);
-  if (!row2HasFieldKeys) {
-    startRow = 1;
+  // Determine start row
+  let startRow: number;
+  if (singleColumnMode) {
+    startRow = 0; // no header row
+  } else {
+    const row2HasFieldKeys = rawData[1] &&
+      rawData[1].some((v) => v && FIELD_KEYS[String(v).trim().toLowerCase()]);
+    startRow = row2HasFieldKeys ? 2 : 1;
   }
 
   for (let i = startRow; i < rawData.length; i++) {
@@ -179,9 +183,8 @@ export function parseExcel(buffer: ArrayBuffer): ParseResult {
     const hasData = row.some((v) => v !== null && v !== undefined && String(v).trim() !== "");
     if (!hasData) continue;
 
-    const excelRow = i + 1; // 1-indexed for user display
+    const excelRow = i + 1;
     const rawPhone = row[columnMap["phone_number"]];
-    const rawName = row[columnMap["contact_name"]];
 
     // Validate phone
     if (!rawPhone || String(rawPhone).trim() === "") {
@@ -199,16 +202,6 @@ export function parseExcel(buffer: ArrayBuffer): ParseResult {
         row: excelRow,
         field: "phone_number",
         message: phoneResult.error || "Invalid phone number",
-      });
-      continue;
-    }
-
-    // Validate name
-    if (!rawName || String(rawName).trim() === "") {
-      errors.rows.push({
-        row: excelRow,
-        field: "contact_name",
-        message: "Contact name is required",
       });
       continue;
     }
@@ -232,13 +225,14 @@ export function parseExcel(buffer: ArrayBuffer): ParseResult {
       return s || null;
     };
 
+    const contactName = getCellStr("contact_name") || `Contact ${entries.length + 1}`;
     const policyType = validatePolicyType(getCellStr("policy_type"));
     const preferredTime = validatePreferredTime(getCellStr("preferred_time"));
     const language = validateLanguage(getCellStr("language"));
 
     entries.push({
       phoneNumber: phoneResult.normalized,
-      contactName: String(rawName).trim(),
+      contactName,
       company: getCellStr("company"),
       policyType,
       preferredTime,

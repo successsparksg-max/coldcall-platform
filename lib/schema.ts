@@ -146,7 +146,7 @@ export const callEntries = pgTable(
       .references(() => callLists.id, { onDelete: "cascade" }),
 
     phoneNumber: text("phone_number").notNull(),
-    contactName: text("contact_name").notNull(),
+    contactName: text("contact_name").notNull().default("Contact"),
     company: text("company"),
     policyType: text("policy_type"),
     preferredTime: text("preferred_time"),
