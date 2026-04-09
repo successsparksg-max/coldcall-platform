@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { FileUploader } from "@/components/FileUploader";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Download, CheckCircle } from "lucide-react";
+import { Download, CheckCircle, Upload } from "lucide-react";
 
 interface Bot {
   id: string;
@@ -35,39 +35,51 @@ export default function UploadPage() {
   }, []);
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <h1 className="text-2xl font-bold">Upload Call List</h1>
-
+    <div className="max-w-2xl space-y-8">
       <div>
-        <a href="/api/template/download">
-          <Button variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Download Template
-          </Button>
-        </a>
-        <p className="mt-2 text-sm text-gray-500">
-          Download the Excel template, fill in your contacts, then upload
-          below.
+        <h1 className="text-3xl font-bold text-gray-900">Upload Call List</h1>
+        <p className="mt-2 text-base text-gray-500">
+          Download the Excel template, fill in your contacts, then upload below.
         </p>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-6">
+        <div className="flex items-center gap-4">
+          <div className="rounded-lg p-2 bg-blue-100">
+            <Download className="h-5 w-5 text-blue-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-base font-medium text-gray-900">Excel Template</p>
+            <p className="text-sm text-gray-500">
+              Use this template to format your contact list
+            </p>
+          </div>
+          <a href="/api/template/download">
+            <Button variant="outline" size="lg" className="text-base px-5 py-3 h-auto">
+              <Download className="mr-2 h-5 w-5" />
+              Download
+            </Button>
+          </a>
+        </div>
       </div>
 
       {/* Bot selector */}
       {!loadingBots && bots.length === 0 && (
-        <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-700">
+        <div className="rounded-xl bg-yellow-50 border border-yellow-200 p-5 text-base text-yellow-700">
           No agent bots configured. Contact your IT admin to set up credentials.
         </div>
       )}
 
       {!loadingBots && bots.length > 0 && (
-        <div className="space-y-2">
-          <Label>Assign to Agent Bot *</Label>
+        <div className="space-y-3">
+          <Label className="text-base font-medium text-gray-900">Assign to Agent Bot *</Label>
           {bots.length === 1 ? (
-            <div className="rounded-md border bg-gray-50 px-3 py-2 text-sm">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-base">
               {bots[0].botLabel}
             </div>
           ) : (
             <select
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               value={selectedBotId}
               onChange={(e) => setSelectedBotId(e.target.value)}
             >
@@ -79,30 +91,32 @@ export default function UploadPage() {
               ))}
             </select>
           )}
-          <p className="text-xs text-gray-500">
+          <p className="text-sm text-gray-500">
             This bot will be used to make calls for this list.
           </p>
         </div>
       )}
 
       {result ? (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3 rounded-md bg-green-50 p-4">
-            <CheckCircle className="h-6 w-6 text-green-600" />
+        <div className="space-y-6">
+          <div className="flex items-center gap-4 rounded-xl bg-green-50 border border-green-200 p-5">
+            <div className="rounded-lg p-2 bg-green-100">
+              <CheckCircle className="h-6 w-6 text-green-600" />
+            </div>
             <div>
-              <p className="font-medium text-green-700">
+              <p className="text-lg font-semibold text-green-700">
                 Upload successful!
               </p>
-              <p className="text-sm text-green-600">
+              <p className="text-base text-green-600">
                 {result.totalEntries} contacts validated and ready.
               </p>
             </div>
           </div>
 
           {result.warnings.length > 0 && (
-            <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-700">
-              <p className="font-medium">Warnings:</p>
-              <ul className="mt-1 list-disc pl-5">
+            <div className="rounded-xl bg-yellow-50 border border-yellow-200 p-5 text-base text-yellow-700">
+              <p className="font-semibold">Warnings:</p>
+              <ul className="mt-2 list-disc pl-5 space-y-1">
                 {result.warnings.map((w, i) => (
                   <li key={i}>{w.message}</li>
                 ))}
@@ -110,15 +124,18 @@ export default function UploadPage() {
             </div>
           )}
 
-          <div className="flex gap-3">
+          <div className="flex gap-4">
             <Button
+              size="lg"
+              className="text-base px-6 py-3 h-auto"
               onClick={() =>
                 router.push(`/dashboard/lists/${result.callListId}`)
               }
             >
               View Call List
             </Button>
-            <Button variant="outline" onClick={() => setResult(null)}>
+            <Button variant="outline" size="lg" className="text-base px-6 py-3 h-auto" onClick={() => setResult(null)}>
+              <Upload className="mr-2 h-5 w-5" />
               Upload Another
             </Button>
           </div>

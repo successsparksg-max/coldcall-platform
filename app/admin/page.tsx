@@ -6,12 +6,6 @@ import { AgentStatsCard } from "@/components/AgentStatsCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Table,
   TableBody,
   TableCell,
@@ -185,12 +179,18 @@ export default function AdminPage() {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Loading...</p>;
+  if (loading) return <p className="text-base text-gray-500">Loading...</p>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Master Dashboard</h1>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Master Dashboard</h1>
+          <p className="mt-1 text-base text-gray-500">
+            Monitor all agents and platform performance
+          </p>
+        </div>
         <Dialog
           open={dialogOpen}
           onOpenChange={(open) => {
@@ -199,28 +199,29 @@ export default function AdminPage() {
           }}
         >
           <DialogTrigger>
-            <Button>
-              <UserPlus className="mr-2 h-4 w-4" />
+            <Button size="lg" className="text-base px-6 py-3 h-auto">
+              <UserPlus className="mr-2 h-5 w-5" />
               Create Agent
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create New Agent</DialogTitle>
+              <DialogTitle className="text-xl">Create New Agent</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleCreateAgent} className="space-y-4">
+            <form onSubmit={handleCreateAgent} className="space-y-5">
               <div className="space-y-2">
-                <Label>Full Name</Label>
+                <Label className="text-base">Full Name</Label>
                 <Input
                   value={form.name}
                   onChange={(e) =>
                     setForm({ ...form, name: e.target.value })
                   }
                   required
+                  className="h-11 text-base"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Email</Label>
+                <Label className="text-base">Email</Label>
                 <Input
                   type="email"
                   value={form.email}
@@ -228,10 +229,11 @@ export default function AdminPage() {
                     setForm({ ...form, email: e.target.value })
                   }
                   required
+                  className="h-11 text-base"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Initial Password</Label>
+                <Label className="text-base">Initial Password</Label>
                 <Input
                   type="text"
                   value={form.password}
@@ -241,24 +243,25 @@ export default function AdminPage() {
                   required
                   minLength={6}
                   placeholder="Min 6 characters"
+                  className="h-11 text-base"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-sm text-gray-500">
                   This password will be emailed to the agent.
                 </p>
               </div>
 
               {emailResult && (
                 <div
-                  className={`flex items-center gap-2 rounded-md p-3 text-sm ${
+                  className={`flex items-center gap-3 rounded-xl p-4 text-base ${
                     emailResult.sent
-                      ? "bg-green-50 text-green-700"
-                      : "bg-yellow-50 text-yellow-700"
+                      ? "bg-green-50 text-green-700 border border-green-200"
+                      : "bg-yellow-50 text-yellow-700 border border-yellow-200"
                   }`}
                 >
                   {emailResult.sent ? (
-                    <CheckCircle className="h-4 w-4" />
+                    <CheckCircle className="h-5 w-5" />
                   ) : (
-                    <AlertCircle className="h-4 w-4" />
+                    <AlertCircle className="h-5 w-5" />
                   )}
                   {emailResult.sent
                     ? "Welcome email sent successfully!"
@@ -266,7 +269,7 @@ export default function AdminPage() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={creating}>
+              <Button type="submit" size="lg" className="w-full text-base h-12" disabled={creating}>
                 {creating ? "Creating..." : "Create Agent & Send Email"}
               </Button>
             </form>
@@ -276,7 +279,7 @@ export default function AdminPage() {
 
       {/* Stats cards */}
       {stats && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-5 lg:grid-cols-6">
           <AgentStatsCard
             title="Total Agents"
             value={stats.totalAgents}
@@ -291,6 +294,7 @@ export default function AdminPage() {
             title="Answered"
             value={stats.totalAnswered}
             icon={PhoneIncoming}
+            color="green"
           />
           <AgentStatsCard
             title="Avg Rating"
@@ -301,6 +305,7 @@ export default function AdminPage() {
             title="Appointments"
             value={stats.totalBooked}
             icon={Calendar}
+            color="blue"
           />
           <AgentStatsCard
             title="Upload Pass Rate"
@@ -312,34 +317,32 @@ export default function AdminPage() {
       )}
 
       {/* Agents table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Agents</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div>
+        <h2 className="mb-4 text-xl font-semibold text-gray-900">Agents</h2>
+        <div className="overflow-hidden rounded-xl border bg-white">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Payment</TableHead>
-                <TableHead>Lists</TableHead>
-                <TableHead>Calls</TableHead>
-                <TableHead>Answered</TableHead>
-                <TableHead>Avg Rating</TableHead>
-                <TableHead>Booked</TableHead>
-                <TableHead>Last Active</TableHead>
-                <TableHead></TableHead>
+              <TableRow className="bg-gray-50">
+                <TableHead className="text-sm font-semibold text-gray-600 py-4 px-5">Name</TableHead>
+                <TableHead className="text-sm font-semibold text-gray-600 py-4">Status</TableHead>
+                <TableHead className="text-sm font-semibold text-gray-600 py-4">Payment</TableHead>
+                <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Lists</TableHead>
+                <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Calls</TableHead>
+                <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Answered</TableHead>
+                <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Avg Rating</TableHead>
+                <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Booked</TableHead>
+                <TableHead className="text-sm font-semibold text-gray-600 py-4">Last Active</TableHead>
+                <TableHead className="py-4"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {agents.map((agent) => (
-                <TableRow key={agent.id}>
-                  <TableCell>
-                    <div className="font-medium">{agent.name}</div>
-                    <div className="text-xs text-gray-500">{agent.email}</div>
+                <TableRow key={agent.id} className="hover:bg-gray-50 transition-colors">
+                  <TableCell className="py-4 px-5">
+                    <div className="text-base font-medium text-gray-900">{agent.name}</div>
+                    <div className="text-sm text-gray-500">{agent.email}</div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="py-4">
                     <Badge
                       variant={agent.isActive ? "default" : "secondary"}
                       className={
@@ -351,7 +354,7 @@ export default function AdminPage() {
                       {agent.isActive ? "Active" : "Inactive"}
                     </Badge>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="py-4">
                     <Badge
                       variant={agent.isPaid ? "default" : "destructive"}
                       className={
@@ -363,45 +366,46 @@ export default function AdminPage() {
                       {agent.isPaid ? "Paid" : "Unpaid"}
                     </Badge>
                   </TableCell>
-                  <TableCell>{agent.totalLists}</TableCell>
-                  <TableCell>{agent.totalCalls}</TableCell>
-                  <TableCell>{agent.callsAnswered}</TableCell>
-                  <TableCell>
+                  <TableCell className="text-base text-gray-700 py-4 text-center">{agent.totalLists}</TableCell>
+                  <TableCell className="text-base text-gray-700 py-4 text-center">{agent.totalCalls}</TableCell>
+                  <TableCell className="text-base text-gray-700 py-4 text-center">{agent.callsAnswered}</TableCell>
+                  <TableCell className="py-4 text-center">
                     {agent.avgRating ? (
-                      <div className="flex items-center gap-1">
-                        <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                        {agent.avgRating}
+                      <div className="flex items-center justify-center gap-1">
+                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                        <span className="text-base font-medium">{agent.avgRating}</span>
                       </div>
                     ) : (
-                      "-"
+                      <span className="text-base text-gray-400">-</span>
                     )}
                   </TableCell>
-                  <TableCell>{agent.appointmentsBooked}</TableCell>
-                  <TableCell className="text-xs text-gray-500">
+                  <TableCell className="text-base text-gray-700 py-4 text-center">{agent.appointmentsBooked}</TableCell>
+                  <TableCell className="text-sm text-gray-500 py-4">
                     {agent.lastActive
                       ? new Date(agent.lastActive).toLocaleDateString()
                       : "-"}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
+                  <TableCell className="py-4">
+                    <div className="flex gap-2">
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="h-9 w-9 p-0"
                         onClick={() => {
                           setEditAgent(agent);
                           setEditForm({ name: agent.name, email: agent.email });
                         }}
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Pencil className="h-4 w-4" />
                       </Button>
                       <Link href={`/admin/agents/${agent.id}`}>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" className="text-sm">
                           View
                         </Button>
                       </Link>
                       <Button
                         variant="outline"
-                        size="sm"
+                        className="text-sm"
                         onClick={() => toggleActive(agent.id, agent.isActive)}
                       >
                         {agent.isActive ? "Deactivate" : "Reactivate"}
@@ -412,84 +416,84 @@ export default function AdminPage() {
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Hot Leads */}
       {stats && stats.hotLeads.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Hot Leads (Rating 4-5, Booked)</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div>
+          <h2 className="mb-4 text-xl font-semibold text-gray-900">Hot Leads (Rating 4-5, Booked)</h2>
+          <div className="overflow-hidden rounded-xl border bg-white">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Agent</TableHead>
-                  <TableHead>Rating</TableHead>
-                  <TableHead>Summary</TableHead>
-                  <TableHead>Date</TableHead>
+                <TableRow className="bg-gray-50">
+                  <TableHead className="text-sm font-semibold text-gray-600 py-4 px-5">Name</TableHead>
+                  <TableHead className="text-sm font-semibold text-gray-600 py-4">Phone</TableHead>
+                  <TableHead className="text-sm font-semibold text-gray-600 py-4">Email</TableHead>
+                  <TableHead className="text-sm font-semibold text-gray-600 py-4">Agent</TableHead>
+                  <TableHead className="text-sm font-semibold text-gray-600 py-4">Rating</TableHead>
+                  <TableHead className="text-sm font-semibold text-gray-600 py-4">Summary</TableHead>
+                  <TableHead className="text-sm font-semibold text-gray-600 py-4">Date</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {stats.hotLeads.map((lead) => (
-                  <TableRow key={lead.id}>
-                    <TableCell className="font-medium">
+                  <TableRow key={lead.id} className="hover:bg-gray-50 transition-colors">
+                    <TableCell className="text-base font-medium text-gray-900 py-4 px-5">
                       {lead.name || "-"}
                     </TableCell>
-                    <TableCell className="font-mono text-sm">
+                    <TableCell className="font-mono text-base text-gray-700 py-4">
                       {lead.phoneNumber}
                     </TableCell>
-                    <TableCell>{lead.email || "-"}</TableCell>
-                    <TableCell className="text-sm">{lead.agentName || "-"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-base text-gray-700 py-4">{lead.email || "-"}</TableCell>
+                    <TableCell className="text-base text-gray-700 py-4">{lead.agentName || "-"}</TableCell>
+                    <TableCell className="py-4">
                       <div className="flex items-center gap-1">
-                        <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                        {lead.rating}
+                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                        <span className="text-base font-medium">{lead.rating}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-xs truncate text-sm">
+                    <TableCell className="max-w-xs truncate text-base text-gray-700 py-4">
                       {lead.summary}
                     </TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="text-sm text-gray-500 py-4">
                       {new Date(lead.createdAt).toLocaleDateString()}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Edit Agent Dialog */}
       <Dialog open={!!editAgent} onOpenChange={(open) => { if (!open) setEditAgent(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Agent</DialogTitle>
+            <DialogTitle className="text-xl">Edit Agent</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleEditAgent} className="space-y-4">
+          <form onSubmit={handleEditAgent} className="space-y-5">
             <div className="space-y-2">
-              <Label>Full Name</Label>
+              <Label className="text-base">Full Name</Label>
               <Input
                 value={editForm.name}
                 onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                 required
+                className="h-11 text-base"
               />
             </div>
             <div className="space-y-2">
-              <Label>Email</Label>
+              <Label className="text-base">Email</Label>
               <Input
                 type="email"
                 value={editForm.email}
                 onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
                 required
+                className="h-11 text-base"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={saving}>
+            <Button type="submit" size="lg" className="w-full text-base h-12" disabled={saving}>
               {saving ? "Saving..." : "Save Changes"}
             </Button>
           </form>

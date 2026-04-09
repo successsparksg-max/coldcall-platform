@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Play, Pause, XCircle, Star, ArrowLeft, Trash2, RefreshCw, RotateCcw, Sparkles, Download } from "lucide-react";
+import { Play, Pause, XCircle, Star, ArrowLeft, Trash2, RefreshCw, RotateCcw, Sparkles, Download, Hash, Users, Phone as PhoneIcon, CheckCircle, PhoneOff, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
 import Link from "next/link";
 import type { CallList, CallEntryWithAnalysis } from "@/lib/types";
@@ -288,79 +288,88 @@ export default function CallListDetailPage({
       ? entries
       : entries.filter((e) => e.callStatus === filter);
 
-  if (loading) return <p className="text-gray-500">Loading...</p>;
-  if (!list) return <p className="text-red-500">Call list not found</p>;
+  if (loading) return <p className="text-base text-gray-500">Loading...</p>;
+  if (!list) return <p className="text-base text-red-500">Call list not found</p>;
 
   const progress = list.totalNumbers
     ? Math.round(((list.callsMade || 0) / list.totalNumbers) * 100)
     : 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-center gap-4">
         <Link href="/dashboard">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4" />
+          <Button variant="ghost" size="lg" className="h-11 w-11 p-0">
+            <ArrowLeft className="h-5 w-5" />
           </Button>
         </Link>
         <div className="flex-1">
-          <h1 className="text-xl font-bold">{list.originalFilename}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{list.originalFilename}</h1>
           {(list as CallList & { botLabel?: string }).botLabel && (
-            <span className="text-sm text-gray-500">
+            <span className="text-base text-gray-500">
               Bot: {(list as CallList & { botLabel?: string }).botLabel}
             </span>
           )}
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-3 mt-2">
             <StatusBadge status={list.callStatus} />
-            <span className="text-sm text-gray-500">
+            <span className="text-base text-gray-500">
               {list.callsMade || 0} / {list.totalNumbers} calls made
             </span>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3 flex-wrap justify-end">
           {list.callStatus === "ready" && (
-            <Button onClick={() => handleAction("start")}>
-              <Play className="mr-1 h-4 w-4" /> Start
+            <Button size="lg" className="text-base px-6 py-3 h-auto" onClick={() => handleAction("start")}>
+              <Play className="mr-2 h-5 w-5" /> Start
             </Button>
           )}
           {list.callStatus === "in_progress" && (
             <Button
               variant="outline"
+              size="lg"
+              className="text-base px-5 py-3 h-auto"
               onClick={() => handleAction("pause")}
             >
-              <Pause className="mr-1 h-4 w-4" /> Pause
+              <Pause className="mr-2 h-5 w-5" /> Pause
             </Button>
           )}
           {list.callStatus === "paused" && (
-            <Button onClick={() => handleAction("resume")}>
-              <Play className="mr-1 h-4 w-4" /> Resume
+            <Button size="lg" className="text-base px-6 py-3 h-auto" onClick={() => handleAction("resume")}>
+              <Play className="mr-2 h-5 w-5" /> Resume
             </Button>
           )}
           {(list.callStatus === "in_progress" ||
             list.callStatus === "paused") && (
             <Button
               variant="destructive"
+              size="lg"
+              className="text-base px-5 py-3 h-auto"
               onClick={() => handleAction("cancel")}
             >
-              <XCircle className="mr-1 h-4 w-4" /> Cancel
+              <XCircle className="mr-2 h-5 w-5" /> Cancel
             </Button>
           )}
           {entries.length > 0 && (
             <Button
               variant="outline"
+              size="lg"
+              className="text-base px-5 py-3 h-auto"
               onClick={handleDownload}
             >
-              <Download className="mr-1 h-4 w-4" /> Download
+              <Download className="mr-2 h-5 w-5" /> Download
             </Button>
           )}
           {hasStaleEntries && list.callStatus !== "in_progress" && (
             <Button
               variant="outline"
+              size="lg"
+              className="text-base px-5 py-3 h-auto"
               onClick={handleSync}
               disabled={syncing}
             >
               <RefreshCw
-                className={`mr-1 h-4 w-4 ${syncing ? "animate-spin" : ""}`}
+                className={`mr-2 h-5 w-5 ${syncing ? "animate-spin" : ""}`}
               />
               {syncing ? "Syncing..." : "Sync Calls"}
             </Button>
@@ -368,21 +377,25 @@ export default function CallListDetailPage({
           {hasRetryableEntries && list.callStatus !== "in_progress" && (
             <Button
               variant="outline"
+              size="lg"
+              className="text-base px-5 py-3 h-auto"
               onClick={handleRetry}
               disabled={retrying}
             >
-              <RotateCcw className="mr-1 h-4 w-4" />
+              <RotateCcw className="mr-2 h-5 w-5" />
               {retrying ? "Resetting..." : "Retry Failed"}
             </Button>
           )}
           {hasAnsweredWithoutAnalysis && list.callStatus !== "in_progress" && (
             <Button
               variant="outline"
+              size="lg"
+              className="text-base px-5 py-3 h-auto"
               onClick={handleReanalyze}
               disabled={reanalyzing}
             >
               <Sparkles
-                className={`mr-1 h-4 w-4 ${reanalyzing ? "animate-pulse" : ""}`}
+                className={`mr-2 h-5 w-5 ${reanalyzing ? "animate-pulse" : ""}`}
               />
               {reanalyzing ? "Analyzing..." : "Re-analyze"}
             </Button>
@@ -392,43 +405,68 @@ export default function CallListDetailPage({
 
       {/* Progress bar */}
       {list.callStatus === "in_progress" && (
-        <div className="h-2 w-full rounded-full bg-gray-200">
+        <div className="h-3 w-full rounded-full bg-gray-200">
           <div
-            className="h-2 rounded-full bg-blue-500 transition-all"
+            className="h-3 rounded-full bg-blue-500 transition-all"
             style={{ width: `${progress}%` }}
           />
         </div>
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-5 gap-3 text-center text-sm">
-        <div className="rounded-md bg-gray-50 p-3">
-          <div className="text-lg font-bold">{list.totalNumbers}</div>
-          <div className="text-gray-500">Total</div>
+      <div className="grid grid-cols-5 gap-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-500">Total</span>
+            <div className="rounded-lg p-2 bg-gray-100">
+              <Hash className="h-5 w-5 text-gray-400" />
+            </div>
+          </div>
+          <div className="mt-3 text-3xl font-bold text-gray-900">{list.totalNumbers}</div>
         </div>
-        <div className="rounded-md bg-green-50 p-3">
-          <div className="text-lg font-bold text-green-700">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-500">Answered</span>
+            <div className="rounded-lg p-2 bg-emerald-100">
+              <CheckCircle className="h-5 w-5 text-emerald-600" />
+            </div>
+          </div>
+          <div className="mt-3 text-3xl font-bold text-emerald-700">
             {list.callsAnswered || 0}
           </div>
-          <div className="text-gray-500">Answered</div>
         </div>
-        <div className="rounded-md bg-red-50 p-3">
-          <div className="text-lg font-bold text-red-600">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-500">No Answer</span>
+            <div className="rounded-lg p-2 bg-red-100">
+              <PhoneOff className="h-5 w-5 text-red-500" />
+            </div>
+          </div>
+          <div className="mt-3 text-3xl font-bold text-red-600">
             {list.callsNoAnswer || 0}
           </div>
-          <div className="text-gray-500">No Answer</div>
         </div>
-        <div className="rounded-md bg-orange-50 p-3">
-          <div className="text-lg font-bold text-orange-600">
+        <div className="rounded-xl border border-orange-200 bg-orange-50 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-500">Failed</span>
+            <div className="rounded-lg p-2 bg-orange-100">
+              <AlertTriangle className="h-5 w-5 text-orange-500" />
+            </div>
+          </div>
+          <div className="mt-3 text-3xl font-bold text-orange-600">
             {list.callsFailed || 0}
           </div>
-          <div className="text-gray-500">Failed</div>
         </div>
-        <div className="rounded-md bg-blue-50 p-3">
-          <div className="text-lg font-bold text-blue-600">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-500">Made</span>
+            <div className="rounded-lg p-2 bg-blue-100">
+              <PhoneIcon className="h-5 w-5 text-blue-600" />
+            </div>
+          </div>
+          <div className="mt-3 text-3xl font-bold text-blue-700">
             {list.callsMade || 0}
           </div>
-          <div className="text-gray-500">Made</div>
         </div>
       </div>
 
@@ -436,7 +474,7 @@ export default function CallListDetailPage({
       <Tabs value={filter} onValueChange={setFilter}>
         <TabsList>
           {STATUS_FILTERS.map((s) => (
-            <TabsTrigger key={s} value={s} className="capitalize">
+            <TabsTrigger key={s} value={s} className="capitalize text-sm">
               {s === "all"
                 ? `All (${entries.length})`
                 : `${s.replace("_", " ")} (${entries.filter((e) => e.callStatus === s).length})`}
@@ -446,98 +484,100 @@ export default function CallListDetailPage({
       </Tabs>
 
       {/* Entries table */}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>#</TableHead>
-            <TableHead>Contact</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Attempts</TableHead>
-            <TableHead>Rating</TableHead>
-            <TableHead>Booking</TableHead>
-            <TableHead></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filteredEntries.map((entry) => (
-            <>
-              <TableRow
-                key={entry.id}
-                className="cursor-pointer"
-                onClick={() =>
-                  setExpandedEntry(
-                    expandedEntry === entry.id ? null : entry.id
-                  )
-                }
-              >
-                <TableCell>{entry.sortOrder + 1}</TableCell>
-                <TableCell>
-                  <div className="font-medium">{entry.contactName}</div>
-                  {entry.company && (
-                    <div className="text-xs text-gray-500">
-                      {entry.company}
+      <div className="overflow-hidden rounded-xl border bg-white">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50">
+              <TableHead className="text-sm font-semibold text-gray-600 py-4 px-5">#</TableHead>
+              <TableHead className="text-sm font-semibold text-gray-600 py-4">Contact</TableHead>
+              <TableHead className="text-sm font-semibold text-gray-600 py-4">Phone</TableHead>
+              <TableHead className="text-sm font-semibold text-gray-600 py-4">Status</TableHead>
+              <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Attempts</TableHead>
+              <TableHead className="text-sm font-semibold text-gray-600 py-4">Rating</TableHead>
+              <TableHead className="text-sm font-semibold text-gray-600 py-4">Booking</TableHead>
+              <TableHead className="py-4"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredEntries.map((entry) => (
+              <>
+                <TableRow
+                  key={entry.id}
+                  className="cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={() =>
+                    setExpandedEntry(
+                      expandedEntry === entry.id ? null : entry.id
+                    )
+                  }
+                >
+                  <TableCell className="text-base text-gray-700 py-4 px-5">{entry.sortOrder + 1}</TableCell>
+                  <TableCell className="py-4">
+                    <div className="text-base font-medium text-gray-900">{entry.contactName}</div>
+                    {entry.company && (
+                      <div className="text-sm text-gray-500">
+                        {entry.company}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-mono text-base text-gray-700 py-4">
+                    {entry.phoneNumber}
+                  </TableCell>
+                  <TableCell className="py-4">
+                    <StatusBadge status={entry.callStatus} />
+                  </TableCell>
+                  <TableCell className="text-base text-gray-700 py-4 text-center">
+                    {(entry.callAttempts || 0) + 1}
+                  </TableCell>
+                  <TableCell className="py-4">
+                    {entry.analysis?.rating && (
+                      <div className="flex items-center gap-1">
+                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                        <span className="text-base font-medium">{entry.analysis.rating}</span>
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-4">
+                    {entry.analysis?.bookingStatus === "TRUE" && (
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
+                        Booked
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-400 cursor-pointer hover:text-gray-600">
+                        {expandedEntry === entry.id ? "Close" : "Details"}
+                      </span>
+                      {canRemoveEntries &&
+                        (entry.callStatus === "pending" ||
+                          entry.callStatus === "skipped") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-red-400 hover:text-red-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveEntry(entry.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                     </div>
-                  )}
-                </TableCell>
-                <TableCell className="font-mono text-sm">
-                  {entry.phoneNumber}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={entry.callStatus} />
-                </TableCell>
-                <TableCell className="text-center">
-                  {(entry.callAttempts || 0) + 1}
-                </TableCell>
-                <TableCell>
-                  {entry.analysis?.rating && (
-                    <div className="flex items-center gap-1">
-                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                      <span className="text-sm">{entry.analysis.rating}</span>
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {entry.analysis?.bookingStatus === "TRUE" && (
-                    <span className="text-xs font-medium text-green-600">
-                      Booked
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 cursor-pointer">
-                      {expandedEntry === entry.id ? "Close" : "Details"}
-                    </span>
-                    {canRemoveEntries &&
-                      (entry.callStatus === "pending" ||
-                        entry.callStatus === "skipped") && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveEntry(entry.id);
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                  </div>
-                </TableCell>
-              </TableRow>
-              {expandedEntry === entry.id && entry.analysis && (
-                <TableRow key={`${entry.id}-analysis`}>
-                  <TableCell colSpan={8} className="bg-gray-50 p-4">
-                    <CallAnalysisCard analysis={entry.analysis} />
                   </TableCell>
                 </TableRow>
-              )}
-            </>
-          ))}
-        </TableBody>
-      </Table>
+                {expandedEntry === entry.id && entry.analysis && (
+                  <TableRow key={`${entry.id}-analysis`}>
+                    <TableCell colSpan={8} className="bg-gray-50 p-5">
+                      <CallAnalysisCard analysis={entry.analysis} />
+                    </TableCell>
+                  </TableRow>
+                )}
+              </>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

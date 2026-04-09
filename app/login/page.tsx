@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Phone } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -60,21 +61,26 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Cold Call Platform</CardTitle>
-          <CardDescription>Sign in to your account</CardDescription>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+      <Card className="w-full max-w-lg rounded-xl border shadow-lg">
+        <CardHeader className="text-center space-y-4 pb-2 pt-10">
+          <div className="mx-auto rounded-xl bg-blue-100 p-3 w-fit">
+            <Phone className="h-8 w-8 text-blue-600" />
+          </div>
+          <div className="space-y-2">
+            <CardTitle className="text-3xl font-bold text-gray-900">Cold Call Platform</CardTitle>
+            <CardDescription className="text-base text-gray-500">Sign in to your account</CardDescription>
+          </div>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <CardContent className="px-8 pb-10 pt-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
+              <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-base text-red-600">
                 {error}
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email">Email / Username</Label>
+              <Label htmlFor="email" className="text-base font-medium text-gray-700">Email / Username</Label>
               <Input
                 id="email"
                 type="text"
@@ -82,19 +88,21 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="email@example.com or it-admin"
                 required
+                className="h-12 rounded-xl text-base px-4"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-base font-medium text-gray-700">Password</Label>
               <Input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                className="h-12 rounded-xl text-base px-4"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" size="lg" className="w-full text-base h-12 rounded-xl" disabled={loading}>
               {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
