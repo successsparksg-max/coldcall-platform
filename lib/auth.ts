@@ -105,10 +105,10 @@ export async function getSessionFromCookie(): Promise<SessionUser | null> {
 export async function authenticate(
   email: string,
   password: string
-): Promise<SessionUser | null> {
+): Promise<{ user: SessionUser } | { error: string }> {
   // Check IT admin first
   if (isItAdminLogin(email, password)) {
-    return getItAdminUser();
+    return { user: getItAdminUser() };
   }
 
   // Check database users
@@ -118,15 +118,25 @@ export async function authenticate(
     .where(eq(users.email, email))
     .limit(1);
 
-  if (!user || !user.passwordHash || !user.isActive) return null;
+  if (!user || !user.passwordHash) {
+    return { error: "No account found with this email" };
+  }
+
+  if (!user.isActive) {
+    return { error: "This account has been deactivated" };
+  }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) return null;
+  if (!valid) {
+    return { error: "Incorrect password" };
+  }
 
   return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    },
   };
 }

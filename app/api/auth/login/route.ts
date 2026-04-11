@@ -12,14 +12,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const user = await authenticate(email, password);
-    if (!user) {
+    const result = await authenticate(email, password);
+    if ("error" in result) {
       return NextResponse.json(
-        { success: false, error: "Invalid credentials" },
+        { success: false, error: result.error },
         { status: 401 }
       );
     }
 
+    const { user } = result;
     const token = await createSessionToken(user);
     await setSessionCookie(token);
 
