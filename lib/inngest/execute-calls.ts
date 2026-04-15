@@ -95,7 +95,7 @@ export const executeCallList = inngest.createFunction(
       const batchResults = await step.run(
         `place-batch-${batchStart}`,
         async () => {
-          const results: { entryId: string; success: boolean; conversationId?: string }[] = [];
+          const results: { entryId: string; success: boolean; conversationId?: string; botIndex: number }[] = [];
 
           // Fire all calls in parallel using Promise.allSettled
           const callPromises = batch.map(async (entry, i) => {
@@ -153,7 +153,7 @@ export const executeCallList = inngest.createFunction(
                 { label: "increment-made" }
               );
 
-              return { entryId: entry.id, success: true, conversationId: result.conversation_id };
+              return { entryId: entry.id, success: true, conversationId: result.conversation_id, botIndex: i % botCount };
             } catch (err) {
               console.error(`[batch] Failed to call ${entry.phoneNumber}:`, err);
               try {
@@ -176,7 +176,7 @@ export const executeCallList = inngest.createFunction(
               } catch (dbErr) {
                 console.error(`[batch] DB error marking failure:`, dbErr);
               }
-              return { entryId: entry.id, success: false };
+              return { entryId: entry.id, success: false, botIndex: i % botCount };
             }
           });
 
@@ -194,18 +194,56 @@ export const executeCallList = inngest.createFunction(
 
       // Wait for all successful calls in the batch to complete
       for (const call of successfulCalls) {
-        await step.waitForEvent(`wait-${call.entryId}`, {
+        // Phase 1: Wait 60s for webhook
+        const webhookEvent = await step.waitForEvent(`wait-${call.entryId}`, {
           event: "elevenlabs/call-completed",
           if: `async.data.conversation_id == '${call.conversationId}'`,
-          timeout: "3m",
+          timeout: "60s",
         });
+
+        if (!webhookEvent) {
+          // Webhook didn't arrive — poll ElevenLabs to check if call ended
+          const callStillActive = await step.run(
+            `poll-${call.entryId}`,
+            async () => {
+              const bot = allBots[call.botIndex];
+              try {
+                const res = await fetch(
+                  `https://api.elevenlabs.io/v1/convai/conversations/${call.conversationId}`,
+                  { headers: { "xi-api-key": bot.elevenlabs_api_key } }
+                );
+                if (!res.ok) return false;
+                const conv = await res.json();
+                const status = conv.status;
+                // "processing" / "in-progress" means call is still live
+                return (
+                  status === "processing" ||
+                  status === "in-progress" ||
+                  status === "in_progress"
+                );
+              } catch {
+                return false; // On error assume ended, move on
+              }
+            }
+          );
+
+          if (callStillActive) {
+            // Call still in progress — one more 60s wait for webhook
+            await step.waitForEvent(`wait-retry-${call.entryId}`, {
+              event: "elevenlabs/call-completed",
+              if: `async.data.conversation_id == '${call.conversationId}'`,
+              timeout: "60s",
+            });
+          }
+          // If call ended or second wait timed out, auto-sync will handle it
+        }
       }
 
-      // Random 30-60s buffer between batches
+      // 10-15s buffer between batches
       const bufferSecs = await step.run(
         `buffer-calc-${batchStart}`,
         async () => {
-          return Math.floor(Math.random() * 31) + 30;
+          return Math.floor(Math.random() * 6) + 10;
         }
       );
       await step.sleep(`buffer-${batchStart}`, `${bufferSecs}s`);
