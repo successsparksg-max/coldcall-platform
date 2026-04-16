@@ -101,6 +101,17 @@ export const executeCallList = inngest.createFunction(
           const callPromises = batch.map(async (entry, i) => {
             const bot = allBots[i % botCount];
             try {
+              // Idempotency check: skip if entry was already called (e.g. by a concurrent execution)
+              const [current] = await db
+                .select({ callStatus: callEntries.callStatus })
+                .from(callEntries)
+                .where(eq(callEntries.id, entry.id))
+                .limit(1);
+              if (current && current.callStatus !== "pending") {
+                console.log(`[batch] Skipping ${entry.phoneNumber}: already ${current.callStatus}`);
+                return { entryId: entry.id, success: false, botIndex: i % botCount };
+              }
+
               await withRetry(
                 () =>
                   db
