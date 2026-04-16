@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { callLists, callEntries } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
+import { inngest } from "@/lib/inngest/client";
 import { eq, and } from "drizzle-orm";
 
 export async function POST(
@@ -31,6 +32,12 @@ export async function POST(
     ) {
       return apiError("Call list cannot be cancelled", 400);
     }
+
+    // Cancel the running Inngest function
+    await inngest.send({
+      name: "calllist/cancel",
+      data: { callListId: id },
+    });
 
     // Mark remaining pending entries as skipped
     await db

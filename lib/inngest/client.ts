@@ -4,6 +4,9 @@ type Events = {
   "calllist/start": {
     data: { callListId: string; agentId: string; botCredentialIds?: string[] };
   };
+  "calllist/cancel": {
+    data: { callListId: string };
+  };
   "elevenlabs/call-completed": {
     data: { conversation_id: string };
   };
