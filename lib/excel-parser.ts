@@ -206,12 +206,13 @@ export function parseExcel(buffer: ArrayBuffer): ParseResult {
       continue;
     }
 
-    // Check duplicates
+    // Skip duplicates — only call each number once per list
     if (phonesSeen.has(phoneResult.normalized)) {
       warnings.push({
         type: "duplicate",
-        message: `Row ${excelRow}: Duplicate phone number ${phoneResult.normalized}`,
+        message: `Row ${excelRow}: Duplicate phone number ${phoneResult.normalized} (skipped)`,
       });
+      continue;
     }
     phonesSeen.add(phoneResult.normalized);
 

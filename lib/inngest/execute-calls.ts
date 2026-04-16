@@ -16,7 +16,7 @@ interface BotCredential {
 }
 
 export const executeCallList = inngest.createFunction(
-  { id: "execute-call-list", retries: 3 },
+  { id: "execute-call-list", retries: 0 },
   { event: "calllist/start" },
   async ({ event, step }) => {
     const { callListId, agentId, botCredentialIds } = event.data;
