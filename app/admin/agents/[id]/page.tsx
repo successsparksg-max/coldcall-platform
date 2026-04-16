@@ -48,7 +48,7 @@ interface AgentDetail {
     billingCycleEnd: string | null;
     notes: string | null;
   } | null;
-  lists: CallList[];
+  lists: (CallList & { booked: number })[];
 }
 
 export default function AgentDetailPage({
@@ -283,6 +283,7 @@ export default function AgentDetailPage({
                 <TableHead>Total</TableHead>
                 <TableHead>Made</TableHead>
                 <TableHead>Answered</TableHead>
+                <TableHead>Booked</TableHead>
                 <TableHead>Uploaded</TableHead>
               </TableRow>
             </TableHeader>
@@ -298,6 +299,7 @@ export default function AgentDetailPage({
                   <TableCell>{list.totalNumbers}</TableCell>
                   <TableCell>{list.callsMade}</TableCell>
                   <TableCell>{list.callsAnswered}</TableCell>
+                  <TableCell>{list.booked}</TableCell>
                   <TableCell className="text-xs">
                     {list.uploadedAt
                       ? new Date(list.uploadedAt).toLocaleDateString()
