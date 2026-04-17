@@ -249,6 +249,8 @@ export const uploadValidations = pgTable("upload_validations", {
   errors: jsonb("errors"),
   warnings: jsonb("warnings"),
   validationPassed: boolean("validation_passed").notNull(),
-  callListId: uuid("call_list_id").references(() => callLists.id),
+  callListId: uuid("call_list_id").references(() => callLists.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });

@@ -1,6 +1,12 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { callLists, callEntries, calls, agentCredentials } from "@/lib/schema";
+import {
+  callLists,
+  callEntries,
+  calls,
+  agentCredentials,
+  uploadValidations,
+} from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
 import { eq, and, asc } from "drizzle-orm";
@@ -115,6 +121,13 @@ export async function DELETE(
     if (list.callStatus === "in_progress") {
       return apiError("Cannot delete a list that is in progress", 400);
     }
+
+    // Unlink audit records so the FK constraint doesn't block deletion.
+    // We keep the upload_validations rows themselves for historical tracking.
+    await db
+      .update(uploadValidations)
+      .set({ callListId: null })
+      .where(eq(uploadValidations.callListId, id));
 
     await db.delete(callLists).where(eq(callLists.id, id));
     return apiSuccess({ message: "Call list deleted" });
