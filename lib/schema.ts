@@ -194,7 +194,9 @@ export const calls = pgTable(
   "calls",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    callEntryId: uuid("call_entry_id").references(() => callEntries.id),
+    callEntryId: uuid("call_entry_id").references(() => callEntries.id, {
+      onDelete: "cascade",
+    }),
 
     callTime: timestamp("call_time", { withTimezone: true }).defaultNow(),
     callingNumber: text("calling_number"),

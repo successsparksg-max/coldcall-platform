@@ -9,7 +9,7 @@ import {
 } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 
 export async function GET(
   _req: NextRequest,
@@ -122,6 +122,17 @@ export async function DELETE(
       return apiError("Cannot delete a list that is in progress", 400);
     }
 
+    // Delete calls first (FK from calls → call_entries has no cascade).
+    const entryIds = await db
+      .select({ id: callEntries.id })
+      .from(callEntries)
+      .where(eq(callEntries.callListId, id));
+    if (entryIds.length > 0) {
+      await db
+        .delete(calls)
+        .where(inArray(calls.callEntryId, entryIds.map((e) => e.id)));
+    }
+
     // Unlink audit records so the FK constraint doesn't block deletion.
     // We keep the upload_validations rows themselves for historical tracking.
     await db
@@ -129,6 +140,7 @@ export async function DELETE(
       .set({ callListId: null })
       .where(eq(uploadValidations.callListId, id));
 
+    // call_entries cascades automatically from call_lists
     await db.delete(callLists).where(eq(callLists.id, id));
     return apiSuccess({ message: "Call list deleted" });
   } catch (error) {
