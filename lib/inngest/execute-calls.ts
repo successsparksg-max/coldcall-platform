@@ -73,9 +73,10 @@ export const executeCallList = inngest.createFunction(
     const botCount = allBots.length;
 
     // Chunk execution to stay under Inngest's step-count-per-run limit.
-    // Each entry uses ~5-7 steps; chunking at 50 entries keeps each run well
-    // under typical step limits and avoids mid-list stalls.
-    const MAX_ENTRIES_PER_RUN = 50;
+    // After the step-combining optimizations, each entry uses ~3 steps in the
+    // common case (place-batch + wait + buffer-sleep). 100 entries = ~300 steps,
+    // well under typical limits, with a safety margin for webhook-miss polls.
+    const MAX_ENTRIES_PER_RUN = 100;
     let entriesProcessedThisRun = 0;
 
     // Process entries in batches of botCount (parallel calling)
@@ -84,27 +85,23 @@ export const executeCallList = inngest.createFunction(
       batchStart < entries.length;
       batchStart += botCount
     ) {
-      // Check if we should continue
-      const shouldContinue = await step.run(
-        `check-batch-${batchStart}`,
+      const batch = entries.slice(batchStart, batchStart + botCount);
+
+      // Place ALL calls in the batch simultaneously within a single step.
+      // The status check is inlined here to save an Inngest step per batch.
+      const batchResults = await step.run(
+        `place-batch-${batchStart}`,
         async () => {
-          const [list] = await db
+          // Check if list is still in_progress before placing calls
+          const [listStatus] = await db
             .select({ callStatus: callLists.callStatus })
             .from(callLists)
             .where(eq(callLists.id, callListId))
             .limit(1);
-          return list?.callStatus === "in_progress";
-        }
-      );
+          if (listStatus?.callStatus !== "in_progress") {
+            return null; // signals: stop processing
+          }
 
-      if (!shouldContinue) break;
-
-      const batch = entries.slice(batchStart, batchStart + botCount);
-
-      // Place ALL calls in the batch simultaneously within a single step
-      const batchResults = await step.run(
-        `place-batch-${batchStart}`,
-        async () => {
           const results: { entryId: string; success: boolean; conversationId?: string; botIndex: number }[] = [];
 
           // Fire all calls in parallel using Promise.allSettled
@@ -209,6 +206,8 @@ export const executeCallList = inngest.createFunction(
         }
       );
 
+      if (batchResults === null) break; // list paused/cancelled
+
       const successfulCalls = batchResults.filter(
         (r) => r.success && r.conversationId
       );
@@ -260,13 +259,9 @@ export const executeCallList = inngest.createFunction(
         }
       }
 
-      // 10-15s buffer between batches
-      const bufferSecs = await step.run(
-        `buffer-calc-${batchStart}`,
-        async () => {
-          return Math.floor(Math.random() * 6) + 10;
-        }
-      );
+      // 10-15s buffer between batches. Deterministic pseudo-random based on
+      // batchStart so we don't need a separate step to generate the value.
+      const bufferSecs = 10 + (batchStart % 6);
       await step.sleep(`buffer-${batchStart}`, `${bufferSecs}s`);
 
       // Chunk handoff: if we've processed enough entries and there are more to go,
