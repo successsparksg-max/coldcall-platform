@@ -4,7 +4,8 @@ import { callLists, callEntries, calls, agentCredentials } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
 import { decrypt } from "@/lib/encryption";
-import { inngest } from "@/lib/inngest/client";
+import { start } from "workflow/api";
+import { analyzeCallTranscript } from "@/workflows/analyze-call-transcript";
 import { eq, and, isNull } from "drizzle-orm";
 
 export async function POST(
@@ -112,9 +113,8 @@ export async function POST(
 
       if (!transcriptText || transcriptText.length === 0) continue;
 
-      await inngest.send({
-        name: "call/analyze-transcript",
-        data: {
+      await start(analyzeCallTranscript, [
+        {
           conversationId,
           transcriptText,
           callDurationSecs: entry.callDurationSeconds || callRecord.duration || 0,
@@ -123,7 +123,7 @@ export async function POST(
             callRecord.recordingUrl ||
             `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
         },
-      });
+      ]);
 
       triggered++;
     }

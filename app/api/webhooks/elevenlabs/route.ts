@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, withRetry } from "@/lib/db";
 import { callEntries, calls, callLists, agentCredentials } from "@/lib/schema";
-import { inngest } from "@/lib/inngest/client";
+import { start, resumeHook } from "workflow/api";
+import { analyzeCallTranscript } from "@/workflows/analyze-call-transcript";
 import { decrypt } from "@/lib/encryption";
 import { eq, sql } from "drizzle-orm";
 import crypto from "crypto";
@@ -155,39 +156,39 @@ export async function POST(req: NextRequest) {
       try {
         await withRetry(
           () =>
-            inngest.send({
-              name: "call/analyze-transcript",
-              data: {
+            start(analyzeCallTranscript, [
+              {
                 conversationId,
                 transcriptText,
                 callDurationSecs: durationSecs,
                 cost: data.metadata?.cost || 0,
                 recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
               },
-            }),
-          { retries: 2, label: "webhook-send-analyze" }
+            ]),
+          { retries: 2, label: "webhook-start-analyze" }
         );
-        console.log("[webhook] analyze-transcript event sent successfully");
-      } catch (inngestErr) {
-        console.error("[webhook] Failed to send analyze-transcript event:", inngestErr);
+        console.log("[webhook] analyze-transcript workflow started");
+      } catch (err) {
+        console.error("[webhook] Failed to start analyze-transcript workflow:", err);
       }
     } else {
       console.log(`[webhook] Skipping analysis: status=${status}, hasTranscript=${!!data.transcript}`);
     }
 
-    // 5. Unblock the call execution loop
+    // 5. Resume the execute-call-list workflow's hook (token = conversation_id)
     try {
       await withRetry(
         () =>
-          inngest.send({
-            name: "elevenlabs/call-completed",
-            data: { conversation_id: conversationId },
+          resumeHook(conversationId, {
+            conversationId,
+            status,
           }),
-        { retries: 2, label: "webhook-send-completed" }
+        { retries: 2, label: "webhook-resume-hook" }
       );
-      console.log("[webhook] call-completed event sent");
-    } catch (inngestErr) {
-      console.error("[webhook] Failed to send call-completed event:", inngestErr);
+      console.log("[webhook] call-completed hook resumed");
+    } catch (err) {
+      // Not found means no workflow is waiting (normal after timeout or poll fallback)
+      console.log("[webhook] resumeHook failed or no waiter:", err instanceof Error ? err.message : err);
     }
 
     return NextResponse.json({ ok: true });

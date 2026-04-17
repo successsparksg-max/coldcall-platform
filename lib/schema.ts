@@ -126,6 +126,10 @@ export const callLists = pgTable(
     callsFailed: integer("calls_failed").default(0),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+
+    // Vercel Workflow run ID for this list's current/last execution.
+    // Used to cancel the workflow imperatively from pause/cancel routes.
+    workflowRunId: text("workflow_run_id"),
   },
   (table) => [
     index("idx_call_lists_agent").on(table.agentId),

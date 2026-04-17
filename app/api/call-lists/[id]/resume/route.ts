@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { callLists } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
-import { inngest } from "@/lib/inngest/client";
+import { start } from "workflow/api";
+import { executeCallList } from "@/workflows/execute-call-list";
 import { eq, and } from "drizzle-orm";
 
 export async function POST(
@@ -30,24 +31,19 @@ export async function POST(
       return apiError("Call list is not paused", 400);
     }
 
+    // Start a fresh workflow run; the old run (if any) was cancelled on pause
+    const run = await start(executeCallList, [
+      id,
+      list.agentId,
+      list.botCredentialId ? [list.botCredentialId] : undefined,
+    ]);
+
     await db
       .update(callLists)
-      .set({ callStatus: "in_progress" })
+      .set({ callStatus: "in_progress", workflowRunId: run.runId })
       .where(eq(callLists.id, id));
 
-    // Re-trigger Inngest with the assigned bot
-    await inngest.send({
-      name: "calllist/start",
-      data: {
-        callListId: id,
-        agentId: list.agentId,
-        botCredentialIds: list.botCredentialId
-          ? [list.botCredentialId]
-          : undefined,
-      },
-    });
-
-    return apiSuccess({ message: "Call list resumed" });
+    return apiSuccess({ message: "Call list resumed", runId: run.runId });
   } catch (error) {
     return handleAuthError(error);
   }
