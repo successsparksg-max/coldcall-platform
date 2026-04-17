@@ -72,6 +72,12 @@ export const executeCallList = inngest.createFunction(
 
     const botCount = allBots.length;
 
+    // Chunk execution to stay under Inngest's step-count-per-run limit.
+    // Each entry uses ~5-7 steps; chunking at 50 entries keeps each run well
+    // under typical step limits and avoids mid-list stalls.
+    const MAX_ENTRIES_PER_RUN = 50;
+    let entriesProcessedThisRun = 0;
+
     // Process entries in batches of botCount (parallel calling)
     for (
       let batchStart = 0;
@@ -262,6 +268,20 @@ export const executeCallList = inngest.createFunction(
         }
       );
       await step.sleep(`buffer-${batchStart}`, `${bufferSecs}s`);
+
+      // Chunk handoff: if we've processed enough entries and there are more to go,
+      // spawn a fresh function run and exit. Each new run gets a fresh step budget.
+      entriesProcessedThisRun += batch.length;
+      const hasMoreWork = batchStart + botCount < entries.length;
+      if (entriesProcessedThisRun >= MAX_ENTRIES_PER_RUN && hasMoreWork) {
+        await step.run(`chunk-handoff-${batchStart}`, async () => {
+          await inngest.send({
+            name: "calllist/start",
+            data: { callListId, agentId, botCredentialIds },
+          });
+        });
+        return; // fresh run will continue from the remaining pending entries
+      }
     }
 
     // Auto-sync: resolve any entries still stuck as "calling"/"called"
