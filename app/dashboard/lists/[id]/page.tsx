@@ -16,6 +16,15 @@ import {
 import { Play, Pause, XCircle, Star, ArrowLeft, Trash2, RefreshCw, RotateCcw, Sparkles, Download, Hash, Users, Phone as PhoneIcon, CheckCircle, PhoneOff, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import type { CallList, CallEntryWithAnalysis } from "@/lib/types";
 import { toast } from "sonner";
 
@@ -36,6 +45,7 @@ export default function CallListDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const [list, setList] = useState<CallList | null>(null);
   const [entries, setEntries] = useState<CallEntryWithAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +54,8 @@ export default function CallListDetailPage({
   const [syncing, setSyncing] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -202,6 +214,26 @@ export default function CallListDetailPage({
       toast.error("Retry failed");
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/call-lists/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Call list deleted");
+        router.push("/dashboard");
+      } else {
+        toast.error(data.error || "Failed to delete list");
+        setDeleting(false);
+        setDeleteDialogOpen(false);
+      }
+    } catch {
+      toast.error("Failed to delete list");
+      setDeleting(false);
+      setDeleteDialogOpen(false);
     }
   }
 
@@ -400,8 +432,46 @@ export default function CallListDetailPage({
               {reanalyzing ? "Analyzing..." : "Re-analyze"}
             </Button>
           )}
+          {list.callStatus !== "in_progress" && (
+            <Button
+              variant="destructive"
+              size="lg"
+              className="text-base px-5 py-3 h-auto"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="mr-2 h-5 w-5" /> Delete
+            </Button>
+          )}
         </div>
       </div>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-lg">Delete this call list?</DialogTitle>
+            <DialogDescription className="text-base">
+              This will permanently delete &quot;{list.originalFilename}&quot; and all its
+              entries and call records. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Yes, delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Progress bar */}
       {list.callStatus === "in_progress" && (
