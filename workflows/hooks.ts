@@ -8,4 +8,8 @@ import { defineHook } from "workflow";
 export const callCompletedHook = defineHook<{
   conversationId: string;
   status?: string;
+  transcriptText?: string;
+  durationSecs?: number;
+  cost?: number;
+  recordingUrl?: string;
 }>();

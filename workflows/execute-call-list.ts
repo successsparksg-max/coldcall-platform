@@ -64,10 +64,30 @@ export async function executeCallList(
     // Wait for each call to complete (or time out after 60s and poll)
     for (const call of successfulCalls) {
       if (!call.conversationId) continue;
-      await waitForCallCompletion(
+      const completionPayload = await waitForCallCompletion(
         call.conversationId,
         allBots[call.botIndex].elevenlabs_api_key
       );
+
+      // If the webhook delivered transcript data, kick off analysis here
+      // (start() is reliable from workflow context)
+      if (
+        completionPayload?.status === "done" &&
+        completionPayload.transcriptText &&
+        completionPayload.transcriptText.length > 0
+      ) {
+        await start(analyzeCallTranscript, [
+          {
+            conversationId: call.conversationId,
+            transcriptText: completionPayload.transcriptText,
+            callDurationSecs: completionPayload.durationSecs ?? 0,
+            cost: completionPayload.cost ?? 0,
+            recordingUrl:
+              completionPayload.recordingUrl ??
+              `https://elevenlabs.io/app/conversational-ai/history/${call.conversationId}`,
+          },
+        ]);
+      }
     }
 
     // 10-15s buffer between batches (deterministic pseudo-random)
@@ -83,7 +103,19 @@ export async function executeCallList(
 // Workflow helper (no 'use step' — this manages hook lifecycle)
 // ============================================================
 
-async function waitForCallCompletion(conversationId: string, apiKey: string) {
+type HookPayload = {
+  conversationId: string;
+  status?: string;
+  transcriptText?: string;
+  durationSecs?: number;
+  cost?: number;
+  recordingUrl?: string;
+};
+
+async function waitForCallCompletion(
+  conversationId: string,
+  apiKey: string
+): Promise<HookPayload | null> {
   "use workflow";
 
   // Phase 1: wait 60s for the webhook
@@ -91,22 +123,23 @@ async function waitForCallCompletion(conversationId: string, apiKey: string) {
   try {
     const race = await Promise.race([
       Promise.resolve(hook).then((v) => ({ timedOut: false as const, value: v })),
-      sleep("60s").then(() => ({ timedOut: true as const })),
+      sleep("60s").then(() => ({ timedOut: true as const, value: null })),
     ]);
 
-    if (!race.timedOut) return;
+    if (!race.timedOut) return race.value;
 
     // Phase 2: webhook didn't arrive — poll ElevenLabs
     const stillActive = await pollCallStatus(conversationId, apiKey);
-    if (!stillActive) return; // call ended, auto-sync will handle it
+    if (!stillActive) return null; // call ended, auto-sync will handle it
 
     // Phase 3: call still in progress, wait one more 60s
     const hook2 = callCompletedHook.create({ token: conversationId });
     try {
-      await Promise.race([
-        Promise.resolve(hook2),
-        sleep("60s"),
+      const race2 = await Promise.race([
+        Promise.resolve(hook2).then((v) => ({ timedOut: false as const, value: v })),
+        sleep("60s").then(() => ({ timedOut: true as const, value: null })),
       ]);
+      return race2.value;
     } finally {
       hook2.dispose();
     }

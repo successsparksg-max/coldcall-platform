@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, withRetry } from "@/lib/db";
 import { callEntries, calls, callLists, agentCredentials } from "@/lib/schema";
-import { start, resumeHook } from "workflow/api";
-import { analyzeCallTranscript } from "@/workflows/analyze-call-transcript";
+import { resumeHook } from "workflow/api";
 import { decrypt } from "@/lib/encryption";
 import { eq, sql } from "drizzle-orm";
 import crypto from "crypto";
@@ -140,54 +139,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. If call completed, trigger post-call analysis
-    console.log(`[webhook] conversationId=${conversationId} status=${status} hasTranscript=${!!data.transcript}`);
-
+    // 4. Build transcript text (if available) so we can pass it to the workflow
+    let transcriptText: string | undefined;
     if (status === "done" && data.transcript) {
-      const transcriptText = data.transcript
+      transcriptText = data.transcript
         .filter(
           (e: { role?: string; message?: string }) => e.role && e.message
         )
         .map((e: { role: string; message: string }) => `${e.role}: ${e.message}`)
         .join("\n");
-
-      console.log(`[webhook] Sending analyze-transcript event, transcript length: ${transcriptText.length}`);
-
-      try {
-        await withRetry(
-          () =>
-            start(analyzeCallTranscript, [
-              {
-                conversationId,
-                transcriptText,
-                callDurationSecs: durationSecs,
-                cost: data.metadata?.cost || 0,
-                recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
-              },
-            ]),
-          { retries: 2, label: "webhook-start-analyze" }
-        );
-        console.log("[webhook] analyze-transcript workflow started");
-      } catch (err) {
-        console.error("[webhook] Failed to start analyze-transcript workflow:", err);
-      }
-    } else {
-      console.log(`[webhook] Skipping analysis: status=${status}, hasTranscript=${!!data.transcript}`);
     }
 
-    // 5. Resume the execute-call-list workflow's hook (token = conversation_id)
+    console.log(
+      `[webhook] conversationId=${conversationId} status=${status} transcriptLen=${transcriptText?.length ?? 0}`
+    );
+
+    // 5. Resume the execute-call-list workflow's hook with the full payload.
+    // The workflow (not this webhook) kicks off analyzeCallTranscript — start()
+    // is reliable from workflow context but was failing silently from here.
     try {
       await withRetry(
         () =>
           resumeHook(conversationId, {
             conversationId,
             status,
+            transcriptText,
+            durationSecs,
+            cost: data.metadata?.cost || 0,
+            recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
           }),
         { retries: 2, label: "webhook-resume-hook" }
       );
       console.log("[webhook] call-completed hook resumed");
     } catch (err) {
-      // Not found means no workflow is waiting (normal after timeout or poll fallback)
+      // No waiter means the workflow already moved on (timeout/poll fallback).
+      // In that case the workflow's auto-sync step will pick up analysis at the end.
       console.log("[webhook] resumeHook failed or no waiter:", err instanceof Error ? err.message : err);
     }
 
