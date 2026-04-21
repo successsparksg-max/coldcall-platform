@@ -1,8 +1,24 @@
 import { db } from "@/lib/db";
-import { callLists, users } from "@/lib/schema";
+import { callLists, callEntries, calls, users } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess } from "@/lib/api-helpers";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray, sql } from "drizzle-orm";
+
+async function bookedCountsFor(listIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (listIds.length === 0) return map;
+  const rows = await db
+    .select({
+      callListId: callEntries.callListId,
+      booked: sql<number>`count(*) filter (where ${calls.bookingStatus} = 'TRUE')`,
+    })
+    .from(callEntries)
+    .innerJoin(calls, eq(calls.callEntryId, callEntries.id))
+    .where(inArray(callEntries.callListId, listIds))
+    .groupBy(callEntries.callListId);
+  for (const r of rows) map.set(r.callListId, Number(r.booked));
+  return map;
+}
 
 export async function GET() {
   try {
@@ -34,7 +50,10 @@ export async function GET() {
         .leftJoin(users, eq(callLists.agentId, users.id))
         .orderBy(desc(callLists.uploadedAt));
 
-      return apiSuccess(lists);
+      const booked = await bookedCountsFor(lists.map((l) => l.id));
+      const enriched = lists.map((l) => ({ ...l, booked: booked.get(l.id) || 0 }));
+
+      return apiSuccess(enriched);
     }
 
     // Agent sees only their own lists
@@ -44,7 +63,10 @@ export async function GET() {
       .where(eq(callLists.agentId, user.id))
       .orderBy(desc(callLists.uploadedAt));
 
-    return apiSuccess(lists);
+    const booked = await bookedCountsFor(lists.map((l) => l.id));
+    const enriched = lists.map((l) => ({ ...l, booked: booked.get(l.id) || 0 }));
+
+    return apiSuccess(enriched);
   } catch (error) {
     return handleAuthError(error);
   }

@@ -36,6 +36,7 @@ interface Agent {
 interface CallListWithAgent extends CallList {
   agentName: string;
   agentEmail: string;
+  booked: number;
 }
 
 export default function AdminCallListsPage() {
@@ -54,6 +55,7 @@ export default function AdminCallListsPage() {
             ...list,
             agentName: list.agentName || "Unknown",
             agentEmail: list.agentEmail || "",
+            booked: list.booked || 0,
           })
         );
 
@@ -168,6 +170,7 @@ export default function AdminCallListsPage() {
                 <TableHead>Answered</TableHead>
                 <TableHead>No Answer</TableHead>
                 <TableHead>Failed</TableHead>
+                <TableHead>Booked</TableHead>
                 <TableHead>Uploaded</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -176,7 +179,7 @@ export default function AdminCallListsPage() {
               {filteredLists.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={10}
+                    colSpan={11}
                     className="text-center text-gray-500"
                   >
                     No call lists found.
@@ -202,6 +205,7 @@ export default function AdminCallListsPage() {
                   <TableCell>{list.callsAnswered}</TableCell>
                   <TableCell>{list.callsNoAnswer}</TableCell>
                   <TableCell>{list.callsFailed}</TableCell>
+                  <TableCell>{list.booked}</TableCell>
                   <TableCell className="text-xs text-gray-500">
                     {list.uploadedAt
                       ? new Date(list.uploadedAt).toLocaleDateString()
