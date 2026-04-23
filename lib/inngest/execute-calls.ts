@@ -392,17 +392,12 @@ export const executeCallList = inngest.createFunction(
           if (status === "done") {
             newEntryStatus = "answered";
           } else {
-            // Extract SIP code from phone_call.termination_reason (structured as
-            // {code: 480, reason: "..."}) when available, else fall back to
-            // legacy string-based heuristics.
-            const phoneCall = conv.metadata?.phone_call || {};
-            const termObj =
-              phoneCall.termination_reason ||
-              phoneCall.error_message ||
-              phoneCall.failure_reason;
+            // Extract SIP code from metadata.error ({code: 480, reason: "..."})
+            // when available, else fall back to legacy string-based heuristics.
+            const errObj = conv.metadata?.error;
             const sipCode =
-              typeof termObj === "object" && termObj !== null
-                ? termObj.code
+              typeof errObj === "object" && errObj !== null
+                ? errObj.code
                 : null;
 
             const terminationReason =

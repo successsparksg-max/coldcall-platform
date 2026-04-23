@@ -114,14 +114,10 @@ export async function POST(
         if (status === "done") {
           newEntryStatus = "answered";
         } else {
-          const phoneCall = conv.metadata?.phone_call || {};
-          const termObj =
-            phoneCall.termination_reason ||
-            phoneCall.error_message ||
-            phoneCall.failure_reason;
+          const errObj = conv.metadata?.error;
           const sipCode =
-            typeof termObj === "object" && termObj !== null
-              ? termObj.code
+            typeof errObj === "object" && errObj !== null
+              ? errObj.code
               : null;
 
           const terminationReason =
