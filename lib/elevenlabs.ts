@@ -7,6 +7,37 @@ interface AgentCredentials {
   outbound_caller_id?: string | null;
 }
 
+export class SIPInitiationError extends Error {
+  conversationId: string | null;
+  sipCode: number | null;
+  constructor(message: string, conversationId: string | null, sipCode: number | null) {
+    super(message);
+    this.name = "SIPInitiationError";
+    this.conversationId = conversationId;
+    this.sipCode = sipCode;
+  }
+}
+
+// SIP response codes that represent "didn't connect" rather than a hard failure:
+// phone is off, busy, declined, request terminated, etc. Plus ElevenLabs' internal
+// 1011 "canceled".
+const NO_ANSWER_SIP_CODES = new Set([
+  408, 480, 486, 487, 600, 603, 604, 1011,
+]);
+
+export function isNoAnswerSipCode(code: number | null | undefined): boolean {
+  return code != null && NO_ANSWER_SIP_CODES.has(code);
+}
+
+export function parseSipCode(message: string | null | undefined): number | null {
+  if (!message) return null;
+  const sip = message.match(/sip status:?\s*(\d+)/i);
+  if (sip) return parseInt(sip[1], 10);
+  const code = message.match(/"code"\s*:\s*(\d+)/i);
+  if (code) return parseInt(code[1], 10);
+  return null;
+}
+
 export async function initiateOutboundCall(
   credentials: AgentCredentials,
   toNumber: string
@@ -83,5 +114,16 @@ export async function initiateOutboundCall(
     throw new Error(`ElevenLabs call failed (${response.status}): ${error}`);
   }
 
-  return await response.json();
+  const json = await response.json();
+
+  // ElevenLabs returns 200 OK with {success:false, message, conversation_id}
+  // when the call reached their infra but SIP failed (e.g. 480 phone off, 486 busy).
+  // Surface these as SIPInitiationError so callers can classify by SIP code.
+  if (json.success === false) {
+    const convId = json.conversation_id || null;
+    const msg = json.message || "ElevenLabs returned success=false";
+    throw new SIPInitiationError(msg, convId, parseSipCode(msg));
+  }
+
+  return json;
 }

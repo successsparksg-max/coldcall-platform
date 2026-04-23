@@ -3,7 +3,11 @@ import { db, withRetry } from "@/lib/db";
 import { callLists, callEntries, calls, agentCredentials } from "@/lib/schema";
 import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import { decrypt } from "@/lib/encryption";
-import { initiateOutboundCall } from "@/lib/elevenlabs";
+import {
+  initiateOutboundCall,
+  SIPInitiationError,
+  isNoAnswerSipCode,
+} from "@/lib/elevenlabs";
 
 interface BotCredential {
   id: string;
@@ -175,22 +179,79 @@ export const executeCallList = inngest.createFunction(
             } catch (err) {
               console.error(`[batch] Failed to call ${entry.phoneNumber}:`, err);
               try {
-                await withRetry(
-                  () =>
-                    db
-                      .update(callEntries)
-                      .set({ callStatus: "failed", updatedAt: new Date() })
-                      .where(eq(callEntries.id, entry.id)),
-                  { label: "mark-failed" }
-                );
-                await withRetry(
-                  () =>
-                    db
-                      .update(callLists)
-                      .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
-                      .where(eq(callLists.id, callListId)),
-                  { label: "increment-failed" }
-                );
+                // SIPInitiationError: ElevenLabs accepted the request but SIP failed
+                // (phone off, busy, declined, canceled). Classify by SIP code rather
+                // than lumping everything into "failed".
+                if (err instanceof SIPInitiationError) {
+                  const isNoAnswer = isNoAnswerSipCode(err.sipCode);
+                  const newStatus = isNoAnswer ? "no_answer" : "failed";
+
+                  await withRetry(
+                    () =>
+                      db
+                        .update(callEntries)
+                        .set({
+                          callStatus: newStatus,
+                          conversationId: err.conversationId,
+                          updatedAt: new Date(),
+                        })
+                        .where(eq(callEntries.id, entry.id)),
+                    { label: "mark-sip-failure" }
+                  );
+
+                  if (err.conversationId) {
+                    await withRetry(
+                      () =>
+                        db.insert(calls).values({
+                          callEntryId: entry.id,
+                          conversationId: err.conversationId!,
+                          callingNumber: bot.outbound_caller_id,
+                          phoneNumber: entry.phoneNumber,
+                          numberStatus: "idle",
+                          elevenlabsAgentId: bot.elevenlabs_agent_id,
+                        }),
+                      { label: "insert-sip-failed-call" }
+                    );
+                  }
+
+                  if (isNoAnswer) {
+                    await withRetry(
+                      () =>
+                        db
+                          .update(callLists)
+                          .set({ callsNoAnswer: sql`${callLists.callsNoAnswer} + 1` })
+                          .where(eq(callLists.id, callListId)),
+                      { label: "increment-no-answer" }
+                    );
+                  } else {
+                    await withRetry(
+                      () =>
+                        db
+                          .update(callLists)
+                          .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
+                          .where(eq(callLists.id, callListId)),
+                      { label: "increment-failed" }
+                    );
+                  }
+                } else {
+                  // Network/timeout/5xx errors: classic failure, mark entry failed.
+                  await withRetry(
+                    () =>
+                      db
+                        .update(callEntries)
+                        .set({ callStatus: "failed", updatedAt: new Date() })
+                        .where(eq(callEntries.id, entry.id)),
+                    { label: "mark-failed" }
+                  );
+                  await withRetry(
+                    () =>
+                      db
+                        .update(callLists)
+                        .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
+                        .where(eq(callLists.id, callListId)),
+                    { label: "increment-failed" }
+                  );
+                }
               } catch (dbErr) {
                 console.error(`[batch] DB error marking failure:`, dbErr);
               }
@@ -331,11 +392,25 @@ export const executeCallList = inngest.createFunction(
           if (status === "done") {
             newEntryStatus = "answered";
           } else {
+            // Extract SIP code from phone_call.termination_reason (structured as
+            // {code: 480, reason: "..."}) when available, else fall back to
+            // legacy string-based heuristics.
+            const phoneCall = conv.metadata?.phone_call || {};
+            const termObj =
+              phoneCall.termination_reason ||
+              phoneCall.error_message ||
+              phoneCall.failure_reason;
+            const sipCode =
+              typeof termObj === "object" && termObj !== null
+                ? termObj.code
+                : null;
+
             const terminationReason =
               conv.metadata?.termination_reason ||
               conv.termination_reason ||
               conv.status;
             const isNoAnswer =
+              isNoAnswerSipCode(sipCode) ||
               terminationReason === "no_answer" ||
               terminationReason === "no-answer" ||
               status === "no-answer" ||

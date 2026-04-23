@@ -4,6 +4,7 @@ import { callLists, callEntries, calls, agentCredentials } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
 import { decrypt } from "@/lib/encryption";
+import { isNoAnswerSipCode } from "@/lib/elevenlabs";
 import { inngest } from "@/lib/inngest/client";
 import { eq, and, inArray } from "drizzle-orm";
 
@@ -113,12 +114,22 @@ export async function POST(
         if (status === "done") {
           newEntryStatus = "answered";
         } else {
-          // Check if it's a no-answer vs actual failure
+          const phoneCall = conv.metadata?.phone_call || {};
+          const termObj =
+            phoneCall.termination_reason ||
+            phoneCall.error_message ||
+            phoneCall.failure_reason;
+          const sipCode =
+            typeof termObj === "object" && termObj !== null
+              ? termObj.code
+              : null;
+
           const terminationReason =
             conv.metadata?.termination_reason ||
             conv.termination_reason ||
             conv.status;
           const isNoAnswer =
+            isNoAnswerSipCode(sipCode) ||
             terminationReason === "no_answer" ||
             terminationReason === "no-answer" ||
             status === "no-answer" ||
