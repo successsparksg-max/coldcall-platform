@@ -4,11 +4,12 @@ import {
   agentCredentials,
   agentBilling,
   callLists,
+  callEntries,
   calls,
 } from "@/lib/schema";
 import { requireRole, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess } from "@/lib/api-helpers";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, gt, and, inArray } from "drizzle-orm";
 
 export async function GET() {
   try {
@@ -58,6 +59,22 @@ export async function GET() {
           0
         );
 
+        // Redialed calls: entries with at least one retry (call_attempts > 0)
+        const listIds = lists.map((l) => l.id);
+        const [redialStats] = listIds.length
+          ? await db
+              .select({
+                redialedCalls: sql<number>`count(*)::int`,
+              })
+              .from(callEntries)
+              .where(
+                and(
+                  inArray(callEntries.callListId, listIds),
+                  gt(callEntries.callAttempts, 0)
+                )
+              )
+          : [{ redialedCalls: 0 }];
+
         // Rating + bookings from calls table
         const [callStats] = await db
           .select({
@@ -88,6 +105,7 @@ export async function GET() {
           totalLists,
           totalCalls,
           callsAnswered,
+          redialedCalls: Number(redialStats?.redialedCalls) || 0,
           avgRating: callStats?.avgRating
             ? Math.round(callStats.avgRating * 10) / 10
             : null,

@@ -68,6 +68,7 @@ interface AgentRow {
   totalLists: number;
   totalCalls: number;
   callsAnswered: number;
+  redialedCalls: number;
   avgRating: number | null;
   appointmentsBooked: number;
   lastActive: string | null;
@@ -329,6 +330,7 @@ export default function AdminPage() {
                 <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Lists</TableHead>
                 <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Calls</TableHead>
                 <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Answered</TableHead>
+                <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Redialed</TableHead>
                 <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Avg Rating</TableHead>
                 <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">Booked</TableHead>
                 <TableHead className="text-sm font-semibold text-gray-600 py-4">Last Active</TableHead>
@@ -369,6 +371,7 @@ export default function AdminPage() {
                   <TableCell className="text-base text-gray-700 py-4 text-center">{agent.totalLists}</TableCell>
                   <TableCell className="text-base text-gray-700 py-4 text-center">{agent.totalCalls}</TableCell>
                   <TableCell className="text-base text-gray-700 py-4 text-center">{agent.callsAnswered}</TableCell>
+                  <TableCell className="text-base text-gray-700 py-4 text-center">{agent.redialedCalls}</TableCell>
                   <TableCell className="py-4 text-center">
                     {agent.avgRating ? (
                       <div className="flex items-center justify-center gap-1">
