@@ -118,31 +118,38 @@ async function waitForCallCompletion(
 ): Promise<HookPayload | null> {
   "use workflow";
 
-  // Phase 1: wait 60s for the webhook
+  // Phase 1: wait up to 60s for the webhook.
+  const phase1 = await raceHookWithTimeout(conversationId, 60_000);
+  if (phase1 !== null) return phase1;
+
+  // Phase 2: webhook didn't arrive — poll ElevenLabs.
+  const stillActive = await pollCallStatus(conversationId, apiKey);
+  if (!stillActive) return null; // call ended, auto-sync will handle it
+
+  // Phase 3: call still in progress, wait one more 60s with a fresh hook.
+  // The Phase 1 hook MUST be disposed before this point or we'd hit
+  // HookConflictError — same token, same workflow run.
+  return await raceHookWithTimeout(conversationId, 60_000);
+}
+
+async function raceHookWithTimeout(
+  conversationId: string,
+  durationMs: number
+): Promise<HookPayload | null> {
+  "use workflow";
   const hook = callCompletedHook.create({ token: conversationId });
   try {
     const race = await Promise.race([
-      Promise.resolve(hook).then((v) => ({ timedOut: false as const, value: v })),
-      sleep("60s").then(() => ({ timedOut: true as const, value: null })),
+      Promise.resolve(hook).then((v) => ({
+        timedOut: false as const,
+        value: v,
+      })),
+      sleep(durationMs).then(() => ({
+        timedOut: true as const,
+        value: null as HookPayload | null,
+      })),
     ]);
-
-    if (!race.timedOut) return race.value;
-
-    // Phase 2: webhook didn't arrive — poll ElevenLabs
-    const stillActive = await pollCallStatus(conversationId, apiKey);
-    if (!stillActive) return null; // call ended, auto-sync will handle it
-
-    // Phase 3: call still in progress, wait one more 60s
-    const hook2 = callCompletedHook.create({ token: conversationId });
-    try {
-      const race2 = await Promise.race([
-        Promise.resolve(hook2).then((v) => ({ timedOut: false as const, value: v })),
-        sleep("60s").then(() => ({ timedOut: true as const, value: null })),
-      ]);
-      return race2.value;
-    } finally {
-      hook2.dispose();
-    }
+    return race.timedOut ? null : race.value;
   } finally {
     hook.dispose();
   }
