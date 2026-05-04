@@ -69,24 +69,22 @@ export async function executeCallList(
         allBots[call.botIndex].elevenlabs_api_key
       );
 
-      // If the webhook delivered transcript data, kick off analysis here
-      // (start() is reliable from workflow context)
+      // If the webhook delivered transcript data, kick off analysis.
+      // start() must be called from a step, not directly from a workflow function.
       if (
         completionPayload?.status === "done" &&
         completionPayload.transcriptText &&
         completionPayload.transcriptText.length > 0
       ) {
-        await start(analyzeCallTranscript, [
-          {
-            conversationId: call.conversationId,
-            transcriptText: completionPayload.transcriptText,
-            callDurationSecs: completionPayload.durationSecs ?? 0,
-            cost: completionPayload.cost ?? 0,
-            recordingUrl:
-              completionPayload.recordingUrl ??
-              `https://elevenlabs.io/app/conversational-ai/history/${call.conversationId}`,
-          },
-        ]);
+        await triggerAnalysis({
+          conversationId: call.conversationId,
+          transcriptText: completionPayload.transcriptText,
+          callDurationSecs: completionPayload.durationSecs ?? 0,
+          cost: completionPayload.cost ?? 0,
+          recordingUrl:
+            completionPayload.recordingUrl ??
+            `https://elevenlabs.io/app/conversational-ai/history/${call.conversationId}`,
+        });
       }
     }
 
@@ -328,6 +326,17 @@ async function placeBatch(
     if (r.status === "fulfilled") results.push(r.value);
   }
   return results;
+}
+
+async function triggerAnalysis(args: {
+  conversationId: string;
+  transcriptText: string;
+  callDurationSecs: number;
+  cost: number;
+  recordingUrl: string;
+}) {
+  "use step";
+  await start(analyzeCallTranscript, [args]);
 }
 
 async function pollCallStatus(
