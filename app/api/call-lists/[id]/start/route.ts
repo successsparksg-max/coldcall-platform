@@ -3,8 +3,7 @@ import { db } from "@/lib/db";
 import { callLists, agentCredentials } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
-import { start } from "workflow/api";
-import { executeCallList } from "@/workflows/execute-call-list";
+import { inngest } from "@/lib/inngest/client";
 import { eq, and } from "drizzle-orm";
 
 export async function POST(
@@ -67,19 +66,23 @@ export async function POST(
       return apiError("Assigned bot credentials not found or incomplete", 400);
     }
 
-    // Start the workflow and store the run ID so we can cancel it later
-    const run = await start(executeCallList, [id, list.agentId, [bot.id]]);
-
+    // Update status
     await db
       .update(callLists)
-      .set({
-        callStatus: "in_progress",
-        startedAt: new Date(),
-        workflowRunId: run.runId,
-      })
+      .set({ callStatus: "in_progress", startedAt: new Date() })
       .where(eq(callLists.id, id));
 
-    return apiSuccess({ message: "Call list started", runId: run.runId });
+    // Trigger Inngest with the single assigned bot
+    await inngest.send({
+      name: "calllist/start",
+      data: {
+        callListId: id,
+        agentId: list.agentId,
+        botCredentialIds: [bot.id],
+      },
+    });
+
+    return apiSuccess({ message: "Call list started" });
   } catch (error) {
     return handleAuthError(error);
   }

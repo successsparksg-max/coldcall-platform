@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { callLists } from "@/lib/schema";
 import { requireAuth, handleAuthError } from "@/lib/auth-helpers";
 import { apiSuccess, apiError } from "@/lib/api-helpers";
-import { getRun } from "workflow/api";
+import { inngest } from "@/lib/inngest/client";
 import { eq, and } from "drizzle-orm";
 
 export async function POST(
@@ -35,15 +35,11 @@ export async function POST(
       .set({ callStatus: "paused" })
       .where(eq(callLists.id, id));
 
-    // Cancel the running workflow so Resume can start a clean one
-    if (list.workflowRunId) {
-      try {
-        const run = getRun(list.workflowRunId);
-        await run.cancel();
-      } catch (err) {
-        console.error(`[pause] Failed to cancel workflow ${list.workflowRunId}:`, err);
-      }
-    }
+    // Cancel the running Inngest function so Resume can start a clean one
+    await inngest.send({
+      name: "calllist/cancel",
+      data: { callListId: id },
+    });
 
     return apiSuccess({ message: "Call list paused" });
   } catch (error) {
