@@ -1,23 +1,17 @@
-import { Pool } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-serverless";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema";
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL!,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
-});
+// Neon HTTP driver: each query is a single HTTP POST to Neon's query proxy.
+// No persistent WebSocket, no idle connections that die on auto-suspend, no
+// per-invocation control-plane wake-up. This is the recommended driver for
+// Vercel serverless; the WebSocket-based Pool was producing intermittent
+// "Control plane request failed" errors and uncaught WebSocket idle errors
+// that killed the entire lambda. We don't use multi-statement transactions,
+// so the HTTP driver's lack of real transaction support is not a constraint.
+const sql = neon(process.env.DATABASE_URL!);
 
-// Without this listener, an idle Neon WebSocket dying (compute auto-suspend,
-// network blip) emits 'error' with no handler, which Node escalates to an
-// uncaught exception and kills the entire serverless container — failing
-// every in-flight request, not just the one whose connection died.
-pool.on("error", (err: Error) => {
-  console.warn("[neon-pool] idle client error (suppressed):", err.message);
-});
-
-export const db = drizzle(pool, { schema });
+export const db = drizzle(sql, { schema });
 
 /**
  * Retry a database operation with exponential backoff.
