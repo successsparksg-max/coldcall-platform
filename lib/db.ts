@@ -9,6 +9,14 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
+// Without this listener, an idle Neon WebSocket dying (compute auto-suspend,
+// network blip) emits 'error' with no handler, which Node escalates to an
+// uncaught exception and kills the entire serverless container — failing
+// every in-flight request, not just the one whose connection died.
+pool.on("error", (err: Error) => {
+  console.warn("[neon-pool] idle client error (suppressed):", err.message);
+});
+
 export const db = drizzle(pool, { schema });
 
 /**
