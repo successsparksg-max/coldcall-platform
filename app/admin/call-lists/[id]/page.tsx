@@ -84,6 +84,11 @@ export default function AdminCallListDetailPage({
     ? Math.round(((list.callsMade || 0) / list.totalNumbers) * 100)
     : 0;
 
+  const completed =
+    (list.callsAnswered || 0) +
+    (list.callsNoAnswer || 0) +
+    (list.callsFailed || 0);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -97,7 +102,8 @@ export default function AdminCallListDetailPage({
           <div className="flex items-center gap-2 mt-1">
             <StatusBadge status={list.callStatus} />
             <span className="text-sm text-gray-500">
-              {list.callsMade || 0} / {list.totalNumbers} calls made
+              {list.callsMade || 0} initiated · {completed} completed ·{" "}
+              {list.totalNumbers} total
             </span>
           </div>
         </div>
@@ -114,10 +120,20 @@ export default function AdminCallListDetailPage({
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-5 gap-3 text-center text-sm">
+      <div className="grid grid-cols-6 gap-3 text-center text-sm">
         <div className="rounded-md bg-gray-50 p-3">
           <div className="text-lg font-bold">{list.totalNumbers}</div>
           <div className="text-gray-500">Total</div>
+        </div>
+        <div className="rounded-md bg-blue-50 p-3">
+          <div className="text-lg font-bold text-blue-600">
+            {list.callsMade || 0}
+          </div>
+          <div className="text-gray-500">Initiated</div>
+        </div>
+        <div className="rounded-md bg-indigo-50 p-3">
+          <div className="text-lg font-bold text-indigo-600">{completed}</div>
+          <div className="text-gray-500">Completed</div>
         </div>
         <div className="rounded-md bg-green-50 p-3">
           <div className="text-lg font-bold text-green-700">
@@ -136,12 +152,6 @@ export default function AdminCallListDetailPage({
             {list.callsFailed || 0}
           </div>
           <div className="text-gray-500">Failed</div>
-        </div>
-        <div className="rounded-md bg-blue-50 p-3">
-          <div className="text-lg font-bold text-blue-600">
-            {list.callsMade || 0}
-          </div>
-          <div className="text-gray-500">Made</div>
         </div>
       </div>
 

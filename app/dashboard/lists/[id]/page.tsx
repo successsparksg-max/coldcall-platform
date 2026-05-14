@@ -327,6 +327,11 @@ export default function CallListDetailPage({
     ? Math.round(((list.callsMade || 0) / list.totalNumbers) * 100)
     : 0;
 
+  const completed =
+    (list.callsAnswered || 0) +
+    (list.callsNoAnswer || 0) +
+    (list.callsFailed || 0);
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -346,7 +351,8 @@ export default function CallListDetailPage({
           <div className="flex items-center gap-3 mt-2">
             <StatusBadge status={list.callStatus} />
             <span className="text-base text-gray-500">
-              {list.callsMade || 0} / {list.totalNumbers} calls made
+              {list.callsMade || 0} initiated · {completed} completed ·{" "}
+              {list.totalNumbers} total
             </span>
           </div>
         </div>
@@ -484,7 +490,7 @@ export default function CallListDetailPage({
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-6 gap-4">
         <div className="rounded-xl border border-gray-200 bg-white p-5">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-gray-500">Total</span>
@@ -493,6 +499,26 @@ export default function CallListDetailPage({
             </div>
           </div>
           <div className="mt-3 text-3xl font-bold text-gray-900">{list.totalNumbers}</div>
+        </div>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-500">Initiated</span>
+            <div className="rounded-lg p-2 bg-blue-100">
+              <PhoneIcon className="h-5 w-5 text-blue-600" />
+            </div>
+          </div>
+          <div className="mt-3 text-3xl font-bold text-blue-700">
+            {list.callsMade || 0}
+          </div>
+        </div>
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-500">Completed</span>
+            <div className="rounded-lg p-2 bg-indigo-100">
+              <CheckCircle className="h-5 w-5 text-indigo-600" />
+            </div>
+          </div>
+          <div className="mt-3 text-3xl font-bold text-indigo-700">{completed}</div>
         </div>
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
           <div className="flex items-center justify-between">
@@ -525,17 +551,6 @@ export default function CallListDetailPage({
           </div>
           <div className="mt-3 text-3xl font-bold text-orange-600">
             {list.callsFailed || 0}
-          </div>
-        </div>
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-500">Made</span>
-            <div className="rounded-lg p-2 bg-blue-100">
-              <PhoneIcon className="h-5 w-5 text-blue-600" />
-            </div>
-          </div>
-          <div className="mt-3 text-3xl font-bold text-blue-700">
-            {list.callsMade || 0}
           </div>
         </div>
       </div>

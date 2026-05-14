@@ -104,8 +104,13 @@ export default function AgentDetailPage({
   if (!data) return <p className="text-red-500">Agent not found</p>;
 
   const { agent, billing, lists } = data;
-  const totalCalls = lists.reduce((s, l) => s + (l.callsMade || 0), 0);
+  const initiated = lists.reduce((s, l) => s + (l.callsMade || 0), 0);
   const answered = lists.reduce((s, l) => s + (l.callsAnswered || 0), 0);
+  const completed = lists.reduce(
+    (s, l) =>
+      s + (l.callsAnswered || 0) + (l.callsNoAnswer || 0) + (l.callsFailed || 0),
+    0
+  );
 
   return (
     <div className="space-y-6">
@@ -132,7 +137,7 @@ export default function AgentDetailPage({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
             <div className="text-2xl font-bold">{lists.length}</div>
@@ -141,8 +146,14 @@ export default function AgentDetailPage({
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <div className="text-2xl font-bold">{totalCalls}</div>
-            <div className="text-sm text-gray-500">Calls Made</div>
+            <div className="text-2xl font-bold">{initiated}</div>
+            <div className="text-sm text-gray-500">Initiated</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 text-center">
+            <div className="text-2xl font-bold">{completed}</div>
+            <div className="text-sm text-gray-500">Completed</div>
           </CardContent>
         </Card>
         <Card>
@@ -154,8 +165,8 @@ export default function AgentDetailPage({
         <Card>
           <CardContent className="pt-4 text-center">
             <div className="text-2xl font-bold">
-              {totalCalls > 0
-                ? `${Math.round((answered / totalCalls) * 100)}%`
+              {completed > 0
+                ? `${Math.round((answered / completed) * 100)}%`
                 : "-"}
             </div>
             <div className="text-sm text-gray-500">Answer Rate</div>
@@ -281,32 +292,40 @@ export default function AgentDetailPage({
                 <TableHead>File</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Total</TableHead>
-                <TableHead>Made</TableHead>
+                <TableHead>Initiated</TableHead>
+                <TableHead>Completed</TableHead>
                 <TableHead>Answered</TableHead>
                 <TableHead>Booked</TableHead>
                 <TableHead>Uploaded</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {lists.map((list) => (
-                <TableRow key={list.id}>
-                  <TableCell className="font-medium">
-                    {list.originalFilename}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={list.callStatus} />
-                  </TableCell>
-                  <TableCell>{list.totalNumbers}</TableCell>
-                  <TableCell>{list.callsMade}</TableCell>
-                  <TableCell>{list.callsAnswered}</TableCell>
-                  <TableCell>{list.booked}</TableCell>
-                  <TableCell className="text-xs">
-                    {list.uploadedAt
-                      ? new Date(list.uploadedAt).toLocaleDateString()
-                      : "-"}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {lists.map((list) => {
+                const listCompleted =
+                  (list.callsAnswered || 0) +
+                  (list.callsNoAnswer || 0) +
+                  (list.callsFailed || 0);
+                return (
+                  <TableRow key={list.id}>
+                    <TableCell className="font-medium">
+                      {list.originalFilename}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={list.callStatus} />
+                    </TableCell>
+                    <TableCell>{list.totalNumbers}</TableCell>
+                    <TableCell>{list.callsMade}</TableCell>
+                    <TableCell>{listCompleted}</TableCell>
+                    <TableCell>{list.callsAnswered}</TableCell>
+                    <TableCell>{list.booked}</TableCell>
+                    <TableCell className="text-xs">
+                      {list.uploadedAt
+                        ? new Date(list.uploadedAt).toLocaleDateString()
+                        : "-"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>

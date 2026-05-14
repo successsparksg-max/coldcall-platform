@@ -58,7 +58,7 @@ export default function DashboardPage() {
         ? lists.filter((l) => l.botCredentialId === selectedBot)
         : lists;
 
-  const totalCalls = visibleLists.reduce(
+  const initiated = visibleLists.reduce(
     (sum, l) => sum + (l.callsMade || 0),
     0
   );
@@ -68,6 +68,11 @@ export default function DashboardPage() {
   );
   const noAnswer = visibleLists.reduce(
     (sum, l) => sum + (l.callsNoAnswer || 0),
+    0
+  );
+  const completed = visibleLists.reduce(
+    (sum, l) =>
+      sum + (l.callsAnswered || 0) + (l.callsNoAnswer || 0) + (l.callsFailed || 0),
     0
   );
 
@@ -90,7 +95,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
         <AgentStatsCard
           title="Total Lists"
           value={visibleLists.length}
@@ -98,8 +103,13 @@ export default function DashboardPage() {
           color="blue"
         />
         <AgentStatsCard
-          title="Total Calls"
-          value={totalCalls}
+          title="Initiated"
+          value={initiated}
+          icon={Phone}
+        />
+        <AgentStatsCard
+          title="Completed"
+          value={completed}
           icon={Phone}
         />
         <AgentStatsCard
@@ -136,8 +146,12 @@ export default function DashboardPage() {
                 (s, l) => s + (l.callsNoAnswer || 0),
                 0
               );
-              const botCalls = botLists.reduce(
-                (s, l) => s + (l.callsMade || 0),
+              const botCompleted = botLists.reduce(
+                (s, l) =>
+                  s +
+                  (l.callsAnswered || 0) +
+                  (l.callsNoAnswer || 0) +
+                  (l.callsFailed || 0),
                 0
               );
               return (
@@ -188,25 +202,21 @@ export default function DashboardPage() {
                       <div className="text-xs text-gray-500">No Answer</div>
                     </div>
                   </div>
-                  {botCalls > 0 && (
+                  {botCompleted > 0 && (
                     <div className="mt-3">
                       <div className="h-2 rounded-full bg-gray-200">
                         <div
                           className="h-2 rounded-full bg-emerald-500 transition-all"
                           style={{
-                            width: `${
-                              botCalls > 0
-                                ? Math.round((botAnswered / botCalls) * 100)
-                                : 0
-                            }%`,
+                            width: `${Math.round(
+                              (botAnswered / botCompleted) * 100
+                            )}%`,
                           }}
                         />
                       </div>
                       <div className="mt-1 text-xs text-gray-400 text-right">
-                        {botCalls > 0
-                          ? Math.round((botAnswered / botCalls) * 100)
-                          : 0}
-                        % answer rate
+                        {Math.round((botAnswered / botCompleted) * 100)}% answer
+                        rate
                       </div>
                     </div>
                   )}
@@ -282,7 +292,10 @@ export default function DashboardPage() {
                     Total
                   </TableHead>
                   <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">
-                    Made
+                    Initiated
+                  </TableHead>
+                  <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">
+                    Completed
                   </TableHead>
                   <TableHead className="text-sm font-semibold text-gray-600 py-4 text-center">
                     Answered
@@ -294,52 +307,61 @@ export default function DashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleLists.map((list) => (
-                  <TableRow
-                    key={list.id}
-                    className="hover:bg-gray-50 transition-colors"
-                  >
-                    <TableCell className="text-base font-medium text-gray-900 py-4 px-5">
-                      {list.originalFilename}
-                    </TableCell>
-                    <TableCell className="py-4">
-                      {list.callStatus === "completed" &&
-                      (list.totalNumbers || 0) > 0 &&
-                      (list.callsAnswered || 0) <
-                        (list.totalNumbers || 0) ? (
-                        <span className="inline-flex items-center rounded-full bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-700">
-                          Partial
-                        </span>
-                      ) : (
-                        <StatusBadge status={list.callStatus} />
-                      )}
-                    </TableCell>
-                    <TableCell className="text-base text-gray-700 py-4 text-center">
-                      {list.totalNumbers}
-                    </TableCell>
-                    <TableCell className="text-base text-gray-700 py-4 text-center">
-                      {list.callsMade}
-                    </TableCell>
-                    <TableCell className="text-base text-gray-700 py-4 text-center">
-                      {list.callsAnswered}
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-500 py-4">
-                      {list.uploadedAt
-                        ? new Date(list.uploadedAt).toLocaleDateString()
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="py-4">
-                      <Link
-                        href={`/dashboard/lists/${list.id}`}
-                        target="_blank"
-                      >
-                        <Button variant="outline" className="text-sm">
-                          View
-                        </Button>
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {visibleLists.map((list) => {
+                  const listCompleted =
+                    (list.callsAnswered || 0) +
+                    (list.callsNoAnswer || 0) +
+                    (list.callsFailed || 0);
+                  return (
+                    <TableRow
+                      key={list.id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <TableCell className="text-base font-medium text-gray-900 py-4 px-5">
+                        {list.originalFilename}
+                      </TableCell>
+                      <TableCell className="py-4">
+                        {list.callStatus === "completed" &&
+                        (list.totalNumbers || 0) > 0 &&
+                        (list.callsAnswered || 0) <
+                          (list.totalNumbers || 0) ? (
+                          <span className="inline-flex items-center rounded-full bg-yellow-100 px-3 py-1 text-sm font-medium text-yellow-700">
+                            Partial
+                          </span>
+                        ) : (
+                          <StatusBadge status={list.callStatus} />
+                        )}
+                      </TableCell>
+                      <TableCell className="text-base text-gray-700 py-4 text-center">
+                        {list.totalNumbers}
+                      </TableCell>
+                      <TableCell className="text-base text-gray-700 py-4 text-center">
+                        {list.callsMade}
+                      </TableCell>
+                      <TableCell className="text-base text-gray-700 py-4 text-center">
+                        {listCompleted}
+                      </TableCell>
+                      <TableCell className="text-base text-gray-700 py-4 text-center">
+                        {list.callsAnswered}
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-500 py-4">
+                        {list.uploadedAt
+                          ? new Date(list.uploadedAt).toLocaleDateString()
+                          : "-"}
+                      </TableCell>
+                      <TableCell className="py-4">
+                        <Link
+                          href={`/dashboard/lists/${list.id}`}
+                          target="_blank"
+                        >
+                          <Button variant="outline" className="text-sm">
+                            View
+                          </Button>
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

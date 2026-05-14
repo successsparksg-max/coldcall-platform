@@ -82,12 +82,17 @@ export default function AdminCallListsPage() {
       ? lists
       : lists.filter((l) => l.agentId === selectedAgent);
 
-  const totalCalls = filteredLists.reduce(
+  const totalInitiated = filteredLists.reduce(
     (s, l) => s + (l.callsMade || 0),
     0
   );
   const totalAnswered = filteredLists.reduce(
     (s, l) => s + (l.callsAnswered || 0),
+    0
+  );
+  const totalCompleted = filteredLists.reduce(
+    (s, l) =>
+      s + (l.callsAnswered || 0) + (l.callsNoAnswer || 0) + (l.callsFailed || 0),
     0
   );
 
@@ -118,7 +123,7 @@ export default function AdminCallListsPage() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold">{filteredLists.length}</div>
@@ -127,8 +132,14 @@ export default function AdminCallListsPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{totalCalls}</div>
-            <p className="text-sm text-gray-500">Calls Made</p>
+            <div className="text-2xl font-bold">{totalInitiated}</div>
+            <p className="text-sm text-gray-500">Initiated</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{totalCompleted}</div>
+            <p className="text-sm text-gray-500">Completed</p>
           </CardContent>
         </Card>
         <Card>
@@ -140,8 +151,8 @@ export default function AdminCallListsPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold">
-              {totalCalls > 0
-                ? `${Math.round((totalAnswered / totalCalls) * 100)}%`
+              {totalCompleted > 0
+                ? `${Math.round((totalAnswered / totalCompleted) * 100)}%`
                 : "-"}
             </div>
             <p className="text-sm text-gray-500">Answer Rate</p>
@@ -166,7 +177,8 @@ export default function AdminCallListsPage() {
                 <TableHead>File</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Total</TableHead>
-                <TableHead>Made</TableHead>
+                <TableHead>Initiated</TableHead>
+                <TableHead>Completed</TableHead>
                 <TableHead>Answered</TableHead>
                 <TableHead>No Answer</TableHead>
                 <TableHead>Failed</TableHead>
@@ -179,47 +191,54 @@ export default function AdminCallListsPage() {
               {filteredLists.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={11}
+                    colSpan={12}
                     className="text-center text-gray-500"
                   >
                     No call lists found.
                   </TableCell>
                 </TableRow>
               )}
-              {filteredLists.map((list) => (
-                <TableRow key={list.id}>
-                  <TableCell>
-                    <div className="font-medium text-sm">{list.agentName}</div>
-                    <div className="text-xs text-gray-400">
-                      {list.agentEmail}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {list.originalFilename}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={list.callStatus} />
-                  </TableCell>
-                  <TableCell>{list.totalNumbers}</TableCell>
-                  <TableCell>{list.callsMade}</TableCell>
-                  <TableCell>{list.callsAnswered}</TableCell>
-                  <TableCell>{list.callsNoAnswer}</TableCell>
-                  <TableCell>{list.callsFailed}</TableCell>
-                  <TableCell>{list.booked}</TableCell>
-                  <TableCell className="text-xs text-gray-500">
-                    {list.uploadedAt
-                      ? new Date(list.uploadedAt).toLocaleDateString()
-                      : "-"}
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/admin/call-lists/${list.id}`}>
-                      <Button variant="outline" size="sm">
-                        View
-                      </Button>
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {filteredLists.map((list) => {
+                const listCompleted =
+                  (list.callsAnswered || 0) +
+                  (list.callsNoAnswer || 0) +
+                  (list.callsFailed || 0);
+                return (
+                  <TableRow key={list.id}>
+                    <TableCell>
+                      <div className="font-medium text-sm">{list.agentName}</div>
+                      <div className="text-xs text-gray-400">
+                        {list.agentEmail}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {list.originalFilename}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={list.callStatus} />
+                    </TableCell>
+                    <TableCell>{list.totalNumbers}</TableCell>
+                    <TableCell>{list.callsMade}</TableCell>
+                    <TableCell>{listCompleted}</TableCell>
+                    <TableCell>{list.callsAnswered}</TableCell>
+                    <TableCell>{list.callsNoAnswer}</TableCell>
+                    <TableCell>{list.callsFailed}</TableCell>
+                    <TableCell>{list.booked}</TableCell>
+                    <TableCell className="text-xs text-gray-500">
+                      {list.uploadedAt
+                        ? new Date(list.uploadedAt).toLocaleDateString()
+                        : "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Link href={`/admin/call-lists/${list.id}`}>
+                        <Button variant="outline" size="sm">
+                          View
+                        </Button>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
