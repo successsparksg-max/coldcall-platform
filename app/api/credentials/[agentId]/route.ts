@@ -158,38 +158,67 @@ export async function PUT(
       await db.insert(agentCredentials).values(values);
     }
 
-    // Auto-configure ElevenLabs webhook URL
+    // Auto-attach the matching workspace-level post-call webhook to this agent.
+    // ElevenLabs stores webhooks at the workspace level (/v1/workspace/webhooks)
+    // and agents reference them by ID via
+    // platform_settings.workspace_overrides.webhooks.post_call_webhook_id.
     let webhookConfigured = false;
     let webhookError: string | null = null;
     try {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL;
       if (appUrl) {
-        const webhookUrl = `${appUrl}/api/webhooks/elevenlabs`;
-        const webhookConfig: Record<string, string> = { url: webhookUrl };
-        if (data.elevenlabsWebhookSecret) {
-          webhookConfig.secret = data.elevenlabsWebhookSecret;
-        }
-        const res = await fetch(
-          `https://api.elevenlabs.io/v1/convai/agents/${data.elevenlabsAgentId}`,
-          {
-            method: "PATCH",
-            headers: {
-              "xi-api-key": rawApiKey,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              platform_settings: { webhook: webhookConfig },
-            }),
-          }
+        const expectedUrl = `${appUrl}/api/webhooks/elevenlabs`;
+
+        const listRes = await fetch(
+          "https://api.elevenlabs.io/v1/workspace/webhooks",
+          { headers: { "xi-api-key": rawApiKey } }
         );
-        webhookConfigured = res.ok;
-        if (!res.ok) {
-          webhookError = `ElevenLabs returned ${res.status}`;
+        if (!listRes.ok) {
+          webhookError = `Failed to list workspace webhooks (${listRes.status})`;
+        } else {
+          const listed = (await listRes.json()) as {
+            webhooks?: Array<{
+              webhook_id: string;
+              webhook_url: string;
+              is_disabled?: boolean;
+            }>;
+          };
+          const match = listed.webhooks?.find(
+            (w) => w.webhook_url === expectedUrl && !w.is_disabled
+          );
+
+          if (!match) {
+            webhookError = `No active workspace webhook with URL ${expectedUrl}. Create it in ElevenLabs → Workspace → Webhooks first.`;
+          } else {
+            const patchRes = await fetch(
+              `https://api.elevenlabs.io/v1/convai/agents/${data.elevenlabsAgentId}`,
+              {
+                method: "PATCH",
+                headers: {
+                  "xi-api-key": rawApiKey,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  platform_settings: {
+                    workspace_overrides: {
+                      webhooks: {
+                        post_call_webhook_id: match.webhook_id,
+                      },
+                    },
+                  },
+                }),
+              }
+            );
+            webhookConfigured = patchRes.ok;
+            if (!patchRes.ok) {
+              webhookError = `Failed to attach webhook to agent (${patchRes.status})`;
+            }
+          }
         }
       }
     } catch (err) {
       webhookError =
-        err instanceof Error ? err.message : "Failed to set webhook";
+        err instanceof Error ? err.message : "Failed to configure webhook";
     }
 
     return apiSuccess({
