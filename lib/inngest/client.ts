@@ -17,6 +17,8 @@ type Events = {
       callDurationSecs: number;
       cost: number;
       recordingUrl: string;
+      // Encrypted EL API key for fallback fetch when webhook payload lacks transcript
+      elevenlabsApiKeyEncrypted?: string;
     };
   };
 };

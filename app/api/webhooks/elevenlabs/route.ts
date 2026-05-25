@@ -61,9 +61,32 @@ export async function POST(req: NextRequest) {
 
     if (!conversationId) return NextResponse.json({ ok: true });
 
-    // 1. Update call_entries status
-    const newEntryStatus = status === "done" ? "answered" : "failed";
     const durationSecs = data.metadata?.call_duration_secs || 0;
+    const terminationReason = String(
+      data.metadata?.termination_reason || ""
+    ).toLowerCase();
+    const transcriptArr = Array.isArray(data.transcript) ? data.transcript : [];
+    const meaningfulTranscriptEntries = transcriptArr.filter(
+      (e: { role?: string; message?: string }) =>
+        e?.role && e?.message && String(e.message).trim().length > 0
+    );
+    const hasMeaningfulTranscript = meaningfulTranscriptEntries.length >= 2;
+
+    // Heuristic: detect voicemail / no-answer-equivalent at webhook stage.
+    // ElevenLabs reports voicemail_detection as termination_reason, but also
+    // sometimes status=done with empty/single-turn transcript on instant hangups.
+    const isVoicemailTermination = terminationReason.includes("voicemail");
+    const isInstantHangup =
+      status === "done" && durationSecs < 5 && !hasMeaningfulTranscript;
+
+    // 1. Update call_entries status
+    let newEntryStatus: "answered" | "failed" | "no_answer";
+    if (status === "done") {
+      newEntryStatus =
+        isVoicemailTermination || isInstantHangup ? "no_answer" : "answered";
+    } else {
+      newEntryStatus = "failed";
+    }
 
     await withRetry(
       () =>
@@ -112,11 +135,18 @@ export async function POST(req: NextRequest) {
             callsAnswered: sql`${callLists.callsAnswered} + 1`,
           })
           .where(eq(callLists.id, entry.callListId));
+      } else if (newEntryStatus === "no_answer") {
+        await db
+          .update(callLists)
+          .set({
+            callsNoAnswer: sql`${callLists.callsNoAnswer} + 1`,
+          })
+          .where(eq(callLists.id, entry.callListId));
       } else if (newEntryStatus === "failed") {
-        // Check if it was actually a no-answer vs failed
+        // status !== "done" branch: failed by EL. Treat very short or
+        // explicit-no-answer cases as no_answer for accurate accounting.
         const isNoAnswer =
-          data.metadata?.termination_reason === "no_answer" ||
-          durationSecs < 5;
+          terminationReason.includes("no_answer") || durationSecs < 5;
         if (isNoAnswer) {
           await db
             .update(callEntries)
@@ -139,18 +169,34 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. If call completed, trigger post-call analysis
-    console.log(`[webhook] conversationId=${conversationId} status=${status} hasTranscript=${!!data.transcript}`);
+    // 4. If call completed, trigger post-call analysis.
+    // Always send the analyze event when status=done — analyze-transcript will
+    // fetch the transcript from EL if it isn't in the webhook payload.
+    console.log(
+      `[webhook] conversationId=${conversationId} status=${status} entryStatus=${newEntryStatus} terminationReason="${terminationReason}" transcriptEntries=${transcriptArr.length} hasMeaningfulTranscript=${hasMeaningfulTranscript}`
+    );
 
-    if (status === "done" && data.transcript) {
-      const transcriptText = data.transcript
+    if (status === "done") {
+      const transcriptText = transcriptArr
         .filter(
           (e: { role?: string; message?: string }) => e.role && e.message
         )
-        .map((e: { role: string; message: string }) => `${e.role}: ${e.message}`)
+        .map(
+          (e: { role: string; message: string }) => `${e.role}: ${e.message}`
+        )
         .join("\n");
 
-      console.log(`[webhook] Sending analyze-transcript event, transcript length: ${transcriptText.length}`);
+      // Look up the bot's encrypted API key so analyze-transcript can fetch
+      // the full transcript from ElevenLabs if needed.
+      let apiKeyEncrypted: string | undefined;
+      if (data.agent_id) {
+        const [cred] = await db
+          .select({ elevenlabsApiKey: agentCredentials.elevenlabsApiKey })
+          .from(agentCredentials)
+          .where(eq(agentCredentials.elevenlabsAgentId, data.agent_id))
+          .limit(1);
+        apiKeyEncrypted = cred?.elevenlabsApiKey;
+      }
 
       try {
         await withRetry(
@@ -163,6 +209,7 @@ export async function POST(req: NextRequest) {
                 callDurationSecs: durationSecs,
                 cost: data.metadata?.cost || 0,
                 recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${conversationId}`,
+                elevenlabsApiKeyEncrypted: apiKeyEncrypted,
               },
             }),
           { retries: 2, label: "webhook-send-analyze" }
@@ -172,7 +219,7 @@ export async function POST(req: NextRequest) {
         console.error("[webhook] Failed to send analyze-transcript event:", inngestErr);
       }
     } else {
-      console.log(`[webhook] Skipping analysis: status=${status}, hasTranscript=${!!data.transcript}`);
+      console.log(`[webhook] Skipping analysis: status=${status}`);
     }
 
     // 5. Unblock the call execution loop

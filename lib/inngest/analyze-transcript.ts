@@ -3,15 +3,73 @@ import { db, withRetry } from "@/lib/db";
 import { calls, callEntries, callLists } from "@/lib/schema";
 import { eq, sql } from "drizzle-orm";
 import { ANALYSIS_PROMPT } from "@/lib/analysis-prompt";
+import { decrypt } from "@/lib/encryption";
 import { generateText } from "ai";
 
 export const analyzeCallTranscript = inngest.createFunction(
   { id: "analyze-call-transcript", retries: 2 },
   { event: "call/analyze-transcript" },
   async ({ event, step }) => {
-    const { conversationId, transcriptText, recordingUrl } = event.data;
+    const {
+      conversationId,
+      transcriptText: initialTranscriptText,
+      recordingUrl,
+      elevenlabsApiKeyEncrypted,
+    } = event.data;
+
+    // If webhook didn't include a transcript, fetch it directly from EL.
+    const transcriptText = await step.run("resolve-transcript", async () => {
+      if (initialTranscriptText && initialTranscriptText.trim().length > 0) {
+        return initialTranscriptText;
+      }
+      if (!elevenlabsApiKeyEncrypted) {
+        console.warn(
+          `[analyze] No transcript in event and no API key — analyzing empty transcript for ${conversationId}`
+        );
+        return "";
+      }
+      try {
+        const apiKey = decrypt(elevenlabsApiKeyEncrypted);
+        const res = await fetch(
+          `https://api.elevenlabs.io/v1/convai/conversations/${conversationId}`,
+          { headers: { "xi-api-key": apiKey } }
+        );
+        if (!res.ok) {
+          console.warn(
+            `[analyze] EL fetch failed for ${conversationId}: HTTP ${res.status}`
+          );
+          return "";
+        }
+        const j = (await res.json()) as {
+          transcript?: Array<{ role?: string; message?: string }>;
+        };
+        const arr = Array.isArray(j.transcript) ? j.transcript : [];
+        return arr
+          .filter((e) => e?.role && e?.message)
+          .map((e) => `${e.role}: ${e.message}`)
+          .join("\n");
+      } catch (e) {
+        console.error(`[analyze] EL fallback fetch errored:`, e);
+        return "";
+      }
+    });
 
     const analysis = await step.run("llm-analysis", async () => {
+      if (!transcriptText || transcriptText.trim().length === 0) {
+        // No transcript at all → mark as voicemail to drive reclassification.
+        return JSON.stringify({
+          rating: 1,
+          summary: "No transcript available — call had no usable conversation.",
+          email: null,
+          user_name: null,
+          booking_status: "FALSE",
+          booking_location: null,
+          booking_date: null,
+          booking_time: null,
+          estimated_cost: 0,
+          is_voicemail: true,
+        });
+      }
       const { text } = await generateText({
         model: process.env.AI_MODEL || "deepseek/deepseek-v3.2",
         prompt: `${ANALYSIS_PROMPT}\n\nTranscript:\n${transcriptText}`,
