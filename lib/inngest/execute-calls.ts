@@ -27,7 +27,8 @@ export const executeCallList = inngest.createFunction(
   },
   { event: "calllist/start" },
   async ({ event, step }) => {
-    const { callListId, agentId, botCredentialIds } = event.data;
+    const { callListId, agentId, botCredentialIds, callingSessionStartedAt } =
+      event.data;
 
     const entries = await step.run("fetch-entries", async () => {
       return db
@@ -75,6 +76,16 @@ export const executeCallList = inngest.createFunction(
     });
 
     const botCount = allBots.length;
+
+    // Continuous-calling clock for periodic rest breaks. Sustained back-to-back
+    // dialing gets numbers flagged as spam / rate-limited by carriers, so after
+    // ~2–2.5h of calling we pause 10–15 min. The clock is threaded through chunk
+    // handoffs via event data so it spans fresh function runs rather than
+    // resetting every 100 entries.
+    let sessionStartedAt = await step.run(
+      "init-session-clock",
+      async () => callingSessionStartedAt ?? Date.now()
+    );
 
     // Chunk execution to stay under Inngest's step-count-per-run limit.
     // After the step-combining optimizations, each entry uses ~3 steps in the
@@ -325,15 +336,50 @@ export const executeCallList = inngest.createFunction(
       const bufferSecs = 10 + (batchStart % 6);
       await step.sleep(`buffer-${batchStart}`, `${bufferSecs}s`);
 
-      // Chunk handoff: if we've processed enough entries and there are more to go,
-      // spawn a fresh function run and exit. Each new run gets a fresh step budget.
       entriesProcessedThisRun += batch.length;
       const hasMoreWork = batchStart + botCount < entries.length;
+
+      // Long rest break: after 2–2.5h of continuous calling, pause 10–15 min
+      // before dialing the next batch. Keeps sustained dialing from getting
+      // numbers spam-flagged / rate-limited by carriers.
+      if (hasMoreWork) {
+        const needRest = await step.run(
+          `rest-check-${batchStart}`,
+          async () => {
+            const elapsedMs = Date.now() - sessionStartedAt;
+            // 2h base + up to 30min, derived from the session clock (no RNG so
+            // the decision is deterministic on Inngest replay).
+            const thresholdMs =
+              2 * 60 * 60 * 1000 + (sessionStartedAt % (30 * 60 * 1000));
+            return elapsedMs >= thresholdMs;
+          }
+        );
+
+        if (needRest) {
+          // 10–15 min, derived deterministically from the session clock.
+          const pauseSecs = 600 + (sessionStartedAt % 300);
+          await step.sleep(`rest-break-${batchStart}`, `${pauseSecs}s`);
+          // Reset the clock so the next 2–2.5h calling window starts fresh.
+          sessionStartedAt = await step.run(
+            `reset-clock-${batchStart}`,
+            async () => Date.now()
+          );
+        }
+      }
+
+      // Chunk handoff: if we've processed enough entries and there are more to go,
+      // spawn a fresh function run and exit. Each new run gets a fresh step budget.
       if (entriesProcessedThisRun >= MAX_ENTRIES_PER_RUN && hasMoreWork) {
         await step.run(`chunk-handoff-${batchStart}`, async () => {
           await inngest.send({
             name: "calllist/start",
-            data: { callListId, agentId, botCredentialIds },
+            data: {
+              callListId,
+              agentId,
+              botCredentialIds,
+              // Forward the rest-break clock so it survives the fresh run.
+              callingSessionStartedAt: sessionStartedAt,
+            },
           });
         });
         return; // fresh run will continue from the remaining pending entries

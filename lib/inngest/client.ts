@@ -2,7 +2,14 @@ import { Inngest } from "inngest";
 
 type Events = {
   "calllist/start": {
-    data: { callListId: string; agentId: string; botCredentialIds?: string[] };
+    data: {
+      callListId: string;
+      agentId: string;
+      botCredentialIds?: string[];
+      // Epoch ms when the current continuous-calling window began. Threaded
+      // through chunk handoffs so the rest-break clock survives fresh runs.
+      callingSessionStartedAt?: number;
+    };
   };
   "calllist/cancel": {
     data: { callListId: string };
