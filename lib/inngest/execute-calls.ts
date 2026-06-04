@@ -350,7 +350,7 @@ export const executeCallList = inngest.createFunction(
             // 2h base + up to 30min, derived from the session clock (no RNG so
             // the decision is deterministic on Inngest replay).
             const thresholdMs =
-              2 * 60 * 60 * 1000 + (sessionStartedAt % (30 * 60 * 1000));
+              4 * 60 * 60 * 1000 + (sessionStartedAt % (30 * 60 * 1000));
             return elapsedMs >= thresholdMs;
           }
         );
