@@ -88,9 +88,10 @@ export const executeCallList = inngest.createFunction(
     );
 
     // Chunk execution to stay under Inngest's step-count-per-run limit.
-    // After the step-combining optimizations, each entry uses ~3 steps in the
-    // common case (place-batch + wait + buffer-sleep). 100 entries = ~300 steps,
-    // well under typical limits, with a safety margin for webhook-miss polls.
+    // Each entry uses 1 place-batch step + 1 buffer sleep + up to
+    // 2 * MAX_WAIT_ITERATIONS (wait + poll per attempt). Typical entries with
+    // a call that ends inside 60s use ~3 steps; a 5-min call uses ~13 steps.
+    // 100 entries at mixed durations stays within Inngest's per-run budget.
     const MAX_ENTRIES_PER_RUN = 100;
     let entriesProcessedThisRun = 0;
 
@@ -284,19 +285,26 @@ export const executeCallList = inngest.createFunction(
         (r) => r.success && r.conversationId
       );
 
-      // Wait for all successful calls in the batch to complete
+      // Wait for each successful call to actually complete before moving on.
+      // Loop (waitForEvent 60s → poll ElevenLabs) until EL confirms the call
+      // ended, or until MAX_WAIT_ITERATIONS. Insurance conversations regularly
+      // run 3–10 minutes; without looping, the next number would be dialed
+      // while the previous call is still live (Victoria's incident).
+      const MAX_WAIT_ITERATIONS = 15; // 15 * 60s = 15-minute hard cap per call
       for (const call of successfulCalls) {
-        // Phase 1: Wait 60s for webhook
-        const webhookEvent = await step.waitForEvent(`wait-${call.entryId}`, {
-          event: "elevenlabs/call-completed",
-          if: `async.data.conversation_id == '${call.conversationId}'`,
-          timeout: "60s",
-        });
+        for (let attempt = 0; attempt < MAX_WAIT_ITERATIONS; attempt++) {
+          const webhookEvent = await step.waitForEvent(
+            `wait-${call.entryId}-${attempt}`,
+            {
+              event: "elevenlabs/call-completed",
+              if: `async.data.conversation_id == '${call.conversationId}'`,
+              timeout: "60s",
+            }
+          );
+          if (webhookEvent) break; // call ended, webhook fired
 
-        if (!webhookEvent) {
-          // Webhook didn't arrive — poll ElevenLabs to check if call ended
           const callStillActive = await step.run(
-            `poll-${call.entryId}`,
+            `poll-${call.entryId}-${attempt}`,
             async () => {
               const bot = allBots[call.botIndex];
               try {
@@ -307,7 +315,6 @@ export const executeCallList = inngest.createFunction(
                 if (!res.ok) return false;
                 const conv = await res.json();
                 const status = conv.status;
-                // "processing" / "in-progress" means call is still live
                 return (
                   status === "processing" ||
                   status === "in-progress" ||
@@ -318,16 +325,13 @@ export const executeCallList = inngest.createFunction(
               }
             }
           );
-
-          if (callStillActive) {
-            // Call still in progress — one more 60s wait for webhook
-            await step.waitForEvent(`wait-retry-${call.entryId}`, {
-              event: "elevenlabs/call-completed",
-              if: `async.data.conversation_id == '${call.conversationId}'`,
-              timeout: "60s",
-            });
+          if (!callStillActive) break; // call ended without webhook; auto-sync
+          if (attempt === MAX_WAIT_ITERATIONS - 1) {
+            console.warn(
+              `[execute-calls] call ${call.conversationId} still active after ` +
+                `${MAX_WAIT_ITERATIONS} min — proceeding to next number; auto-sync will reconcile`
+            );
           }
-          // If call ended or second wait timed out, auto-sync will handle it
         }
       }
 
