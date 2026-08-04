@@ -292,6 +292,11 @@ export const executeCallList = inngest.createFunction(
       // while the previous call is still live (Victoria's incident).
       const MAX_WAIT_ITERATIONS = 15; // 15 * 60s = 15-minute hard cap per call
       for (const call of successfulCalls) {
+        const waitStartMs = Date.now();
+        console.log(
+          `[execute-calls] wait-loop start entry=${call.entryId} conv=${call.conversationId}`
+        );
+        let exitReason = "max-iterations";
         for (let attempt = 0; attempt < MAX_WAIT_ITERATIONS; attempt++) {
           const webhookEvent = await step.waitForEvent(
             `wait-${call.entryId}-${attempt}`,
@@ -301,31 +306,64 @@ export const executeCallList = inngest.createFunction(
               timeout: "60s",
             }
           );
-          if (webhookEvent) break; // call ended, webhook fired
+          if (webhookEvent) {
+            exitReason = `webhook@attempt=${attempt}`;
+            break;
+          }
 
           const callStillActive = await step.run(
             `poll-${call.entryId}-${attempt}`,
             async () => {
               const bot = allBots[call.botIndex];
+              // 30s abort mirrors initiateOutboundCall — without it a hung EL
+              // response can block the whole loop indefinitely.
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 30000);
+              const pollStartMs = Date.now();
               try {
                 const res = await fetch(
                   `https://api.elevenlabs.io/v1/convai/conversations/${call.conversationId}`,
-                  { headers: { "xi-api-key": bot.elevenlabs_api_key } }
+                  {
+                    headers: { "xi-api-key": bot.elevenlabs_api_key },
+                    signal: controller.signal,
+                  }
                 );
-                if (!res.ok) return false;
+                clearTimeout(timer);
+                if (!res.ok) {
+                  console.log(
+                    `[execute-calls] poll entry=${call.entryId} attempt=${attempt} httpStatus=${res.status} tookMs=${Date.now() - pollStartMs}`
+                  );
+                  return false;
+                }
                 const conv = await res.json();
                 const status = conv.status;
+                console.log(
+                  `[execute-calls] poll entry=${call.entryId} attempt=${attempt} elStatus=${status} tookMs=${Date.now() - pollStartMs}`
+                );
                 return (
                   status === "processing" ||
                   status === "in-progress" ||
                   status === "in_progress"
                 );
-              } catch {
+              } catch (err) {
+                clearTimeout(timer);
+                const reason =
+                  err instanceof Error && err.name === "AbortError"
+                    ? "abort-timeout"
+                    : err instanceof Error
+                      ? err.message
+                      : "unknown";
+                console.log(
+                  `[execute-calls] poll entry=${call.entryId} attempt=${attempt} err=${reason} tookMs=${Date.now() - pollStartMs}`
+                );
                 return false; // On error assume ended, move on
               }
             }
           );
-          if (!callStillActive) break; // call ended without webhook; auto-sync
+          if (!callStillActive) {
+            exitReason = `poll-inactive@attempt=${attempt}`;
+            break;
+          }
           if (attempt === MAX_WAIT_ITERATIONS - 1) {
             console.warn(
               `[execute-calls] call ${call.conversationId} still active after ` +
@@ -333,6 +371,9 @@ export const executeCallList = inngest.createFunction(
             );
           }
         }
+        console.log(
+          `[execute-calls] wait-loop end entry=${call.entryId} exit=${exitReason} elapsedMs=${Date.now() - waitStartMs}`
+        );
       }
 
       // 10-15s buffer between batches. Deterministic pseudo-random based on
