@@ -431,9 +431,12 @@ export const executeCallList = inngest.createFunction(
       }
     }
 
-    // Auto-sync: resolve any entries still stuck as "calling"/"called"
-    await step.run("auto-sync", async () => {
-      const staleEntries = await db
+    // Auto-sync: resolve any entries still stuck as "calling"/"called".
+    // Each per-entry reconciliation runs in its own step.run so it gets a fresh
+    // HTTP window (no 504 risk on large lists) and Inngest can resume mid-loop
+    // across retries without redoing already-reconciled entries.
+    const staleEntries = await step.run("auto-sync-fetch", async () => {
+      return db
         .select()
         .from(callEntries)
         .where(
@@ -442,150 +445,170 @@ export const executeCallList = inngest.createFunction(
             inArray(callEntries.callStatus, ["called", "calling"])
           )
         );
+    });
 
-      if (staleEntries.length === 0) return;
+    for (const entry of staleEntries) {
+      if (!entry.conversationId) continue;
 
-      for (const entry of staleEntries) {
-        if (!entry.conversationId) continue;
-
+      await step.run(`auto-sync-${entry.id}`, async () => {
         // Find the right API key by matching the bot that made this call
         const [callRecord] = await db
           .select({ elevenlabsAgentId: calls.elevenlabsAgentId })
           .from(calls)
-          .where(eq(calls.conversationId, entry.conversationId))
+          .where(eq(calls.conversationId, entry.conversationId!))
           .limit(1);
 
-        // Find the bot credential for this call
         const matchingBot = callRecord
           ? allBots.find(
-              (b) =>
-                b.elevenlabs_agent_id === callRecord.elevenlabsAgentId
+              (b) => b.elevenlabs_agent_id === callRecord.elevenlabsAgentId
             )
           : null;
-        const apiKey = matchingBot?.elevenlabs_api_key || allBots[0].elevenlabs_api_key;
+        const apiKey =
+          matchingBot?.elevenlabs_api_key || allBots[0].elevenlabs_api_key;
 
+        // 30s abort mirrors initiateOutboundCall / the per-call poll so a hung
+        // EL response can't blow the step's HTTP budget.
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 30000);
+        let conv: {
+          status?: string;
+          metadata?: {
+            call_duration_secs?: number;
+            duration_secs?: number;
+            cost?: number;
+            error?: { code?: number } | string;
+            termination_reason?: string;
+          };
+          call_cost?: number;
+          termination_reason?: string;
+          transcript?: Array<{ role?: string; message?: string }>;
+        };
         try {
           const res = await fetch(
             `https://api.elevenlabs.io/v1/convai/conversations/${entry.conversationId}`,
-            { headers: { "xi-api-key": apiKey } }
-          );
-          if (!res.ok) continue;
-
-          const conv = await res.json();
-          const status = conv.status;
-          const durationSecs =
-            conv.metadata?.call_duration_secs ||
-            conv.metadata?.duration_secs ||
-            0;
-          const cost = conv.metadata?.cost || conv.call_cost || 0;
-
-          let newEntryStatus: "answered" | "no_answer" | "failed";
-          if (status === "done") {
-            newEntryStatus = "answered";
-          } else {
-            // Extract SIP code from metadata.error ({code: 480, reason: "..."})
-            // when available, else fall back to legacy string-based heuristics.
-            const errObj = conv.metadata?.error;
-            const sipCode =
-              typeof errObj === "object" && errObj !== null
-                ? errObj.code
-                : null;
-
-            const terminationReason =
-              conv.metadata?.termination_reason ||
-              conv.termination_reason ||
-              conv.status;
-            const isNoAnswer =
-              isNoAnswerSipCode(sipCode) ||
-              terminationReason === "no_answer" ||
-              terminationReason === "no-answer" ||
-              status === "no-answer" ||
-              status === "no_answer" ||
-              durationSecs < 5;
-            newEntryStatus = isNoAnswer ? "no_answer" : "failed";
-          }
-
-          await db
-            .update(callEntries)
-            .set({
-              callStatus: newEntryStatus,
-              callDurationSeconds: durationSecs,
-              callEndedAt: new Date(),
-              updatedAt: new Date(),
-            })
-            .where(eq(callEntries.id, entry.id));
-
-          await db
-            .update(calls)
-            .set({
-              numberStatus: "idle",
-              duration: durationSecs,
-              callCost: cost?.toString() || null,
-            })
-            .where(eq(calls.conversationId, entry.conversationId));
-
-          if (newEntryStatus === "answered") {
-            await db
-              .update(callLists)
-              .set({
-                callsAnswered: sql`${callLists.callsAnswered} + 1`,
-              })
-              .where(eq(callLists.id, callListId));
-          } else if (newEntryStatus === "no_answer") {
-            await db
-              .update(callLists)
-              .set({
-                callsNoAnswer: sql`${callLists.callsNoAnswer} + 1`,
-              })
-              .where(eq(callLists.id, callListId));
-          } else {
-            await db
-              .update(callLists)
-              .set({
-                callsFailed: sql`${callLists.callsFailed} + 1`,
-              })
-              .where(eq(callLists.id, callListId));
-          }
-
-          if (status === "done" && conv.transcript) {
-            const transcriptText = (
-              Array.isArray(conv.transcript) ? conv.transcript : []
-            )
-              .filter(
-                (e: { role?: string; message?: string }) =>
-                  e.role && e.message
-              )
-              .map(
-                (e: { role: string; message: string }) =>
-                  `${e.role}: ${e.message}`
-              )
-              .join("\n");
-
-            if (transcriptText.length > 0) {
-              await inngest.send({
-                name: "call/analyze-transcript",
-                data: {
-                  conversationId: entry.conversationId,
-                  transcriptText,
-                  callDurationSecs: durationSecs,
-                  cost: cost || 0,
-                  recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${entry.conversationId}`,
-                },
-              });
+            {
+              headers: { "xi-api-key": apiKey },
+              signal: controller.signal,
             }
+          );
+          clearTimeout(timer);
+          if (!res.ok) {
+            console.log(
+              `[auto-sync] entry=${entry.id} skip httpStatus=${res.status}`
+            );
+            return;
           }
-
-          console.log(
-            `[auto-sync] Entry ${entry.id} → ${newEntryStatus}`
-          );
+          conv = await res.json();
         } catch (err) {
-          console.error(
-            `[auto-sync] Failed to sync entry ${entry.id}:`,
-            err
-          );
+          clearTimeout(timer);
+          const reason =
+            err instanceof Error && err.name === "AbortError"
+              ? "abort-timeout"
+              : err instanceof Error
+                ? err.message
+                : "unknown";
+          console.error(`[auto-sync] entry=${entry.id} fetch-err=${reason}`);
+          return;
         }
-      }
-    });
+
+        const status = conv.status;
+        const durationSecs =
+          conv.metadata?.call_duration_secs ||
+          conv.metadata?.duration_secs ||
+          0;
+        const cost = conv.metadata?.cost || conv.call_cost || 0;
+
+        let newEntryStatus: "answered" | "no_answer" | "failed";
+        if (status === "done") {
+          newEntryStatus = "answered";
+        } else {
+          const errObj = conv.metadata?.error;
+          const sipCode =
+            typeof errObj === "object" && errObj !== null
+              ? errObj.code ?? null
+              : null;
+
+          const terminationReason =
+            conv.metadata?.termination_reason ||
+            conv.termination_reason ||
+            conv.status;
+          const isNoAnswer =
+            isNoAnswerSipCode(sipCode) ||
+            terminationReason === "no_answer" ||
+            terminationReason === "no-answer" ||
+            status === "no-answer" ||
+            status === "no_answer" ||
+            durationSecs < 5;
+          newEntryStatus = isNoAnswer ? "no_answer" : "failed";
+        }
+
+        await db
+          .update(callEntries)
+          .set({
+            callStatus: newEntryStatus,
+            callDurationSeconds: durationSecs,
+            callEndedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(callEntries.id, entry.id));
+
+        await db
+          .update(calls)
+          .set({
+            numberStatus: "idle",
+            duration: durationSecs,
+            callCost: cost?.toString() || null,
+          })
+          .where(eq(calls.conversationId, entry.conversationId!));
+
+        if (newEntryStatus === "answered") {
+          await db
+            .update(callLists)
+            .set({ callsAnswered: sql`${callLists.callsAnswered} + 1` })
+            .where(eq(callLists.id, callListId));
+        } else if (newEntryStatus === "no_answer") {
+          await db
+            .update(callLists)
+            .set({ callsNoAnswer: sql`${callLists.callsNoAnswer} + 1` })
+            .where(eq(callLists.id, callListId));
+        } else {
+          await db
+            .update(callLists)
+            .set({ callsFailed: sql`${callLists.callsFailed} + 1` })
+            .where(eq(callLists.id, callListId));
+        }
+
+        if (status === "done" && conv.transcript) {
+          const transcriptText = (
+            Array.isArray(conv.transcript) ? conv.transcript : []
+          )
+            .filter(
+              (e: { role?: string; message?: string }) =>
+                Boolean(e.role) && Boolean(e.message)
+            )
+            .map(
+              (e: { role?: string; message?: string }) =>
+                `${e.role}: ${e.message}`
+            )
+            .join("\n");
+
+          if (transcriptText.length > 0) {
+            await inngest.send({
+              name: "call/analyze-transcript",
+              data: {
+                conversationId: entry.conversationId,
+                transcriptText,
+                callDurationSecs: durationSecs,
+                cost: cost || 0,
+                recordingUrl: `https://elevenlabs.io/app/conversational-ai/history/${entry.conversationId}`,
+              },
+            });
+          }
+        }
+
+        console.log(`[auto-sync] entry=${entry.id} → ${newEntryStatus}`);
+      });
+    }
 
     // Finalize
     await step.run("finalize", async () => {
