@@ -230,7 +230,10 @@ export default function AdminCallListDetailPage({
               {expandedEntry === entry.id && entry.analysis && (
                 <TableRow key={`${entry.id}-analysis`}>
                   <TableCell colSpan={7} className="bg-gray-50 p-4">
-                    <CallAnalysisCard analysis={entry.analysis} />
+                    <CallAnalysisCard
+                      analysis={entry.analysis}
+                      conversationId={entry.conversationId}
+                    />
                   </TableCell>
                 </TableRow>
               )}

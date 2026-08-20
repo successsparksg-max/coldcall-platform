@@ -18,7 +18,13 @@ interface AnalysisData {
   callCost: string | null;
 }
 
-export function CallAnalysisCard({ analysis }: { analysis: AnalysisData }) {
+export function CallAnalysisCard({
+  analysis,
+  conversationId,
+}: {
+  analysis: AnalysisData;
+  conversationId?: string | null;
+}) {
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -137,15 +143,18 @@ export function CallAnalysisCard({ analysis }: { analysis: AnalysisData }) {
           </details>
         )}
 
-        {analysis.recordingUrl && (
-          <a
-            href={analysis.recordingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-blue-600 hover:underline"
-          >
-            View Recording
-          </a>
+        {conversationId && (
+          <div className="space-y-1">
+            <span className="text-xs text-gray-500">Recording:</span>
+            <audio
+              controls
+              preload="none"
+              src={`/api/calls/${conversationId}/audio`}
+              className="w-full h-8"
+            >
+              Your browser does not support audio playback.
+            </audio>
+          </div>
         )}
       </CardContent>
     </Card>
