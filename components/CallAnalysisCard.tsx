@@ -145,7 +145,7 @@ export function CallAnalysisCard({
 
         {conversationId && (
           <div className="space-y-1">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
               <span className="text-xs text-gray-500">Recording:</span>
               {analysis.recordingUrl && (
                 <a
