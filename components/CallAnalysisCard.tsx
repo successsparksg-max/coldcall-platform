@@ -145,7 +145,19 @@ export function CallAnalysisCard({
 
         {conversationId && (
           <div className="space-y-1">
-            <span className="text-xs text-gray-500">Recording:</span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Recording:</span>
+              {analysis.recordingUrl && (
+                <a
+                  href={analysis.recordingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Open in ElevenLabs ↗
+                </a>
+              )}
+            </div>
             <audio
               controls
               preload="none"
